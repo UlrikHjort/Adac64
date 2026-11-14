@@ -36,7 +36,7 @@ package body SID is
       16#88#, 16#99#, 16#AA#, 16#BB#, 16#CC#, 16#DD#, 16#EE#, 16#FF#);
 
    --  Cycles remaining until the next output sample
-   Cycles_Per_Sample : constant Float := Float (Clock_Rate) /
+   Cycles_Per_Sample : Float := Float (Clock_Rate) /
                                           Float (Sample_Rate);
    Cycle_Acc : Float := 0.0;
 
@@ -47,6 +47,12 @@ package body SID is
    DC_Prev_In, DC_Prev_Out : Float := 0.0;
 
    Last_Write : Byte := 0;
+
+   procedure Set_Clock (Hz : Natural) is
+   begin
+      Clock_Rate := Hz;
+      Cycles_Per_Sample := Float (Hz) / Float (Sample_Rate);
+   end Set_Clock;
 
    procedure Reset is
    begin

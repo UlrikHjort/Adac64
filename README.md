@@ -88,6 +88,14 @@ sense through the CPU port, so the KERNAL tape routines and turbo tape
 loaders work. Autostart types `LOAD` + `RUN` and warps while the motor runs.
 T64 files are still loaded instantly through the KERNAL trap.
 
+### PAL / NTSC
+
+PAL (6569, 63 cycles x 312 lines, 985 kHz) is the default. Machine → NTSC or
+`--ntsc` switches to the 6567R8 (65 cycles x 263 lines, 1.023 MHz, 60 Hz);
+SID pitch, drive timing and the C128 VDC follow, and the KERNAL detects the
+standard by itself. NTSC-only games (e.g. Spy vs Spy NTSC) need it, and so
+do many US demos. The choice is saved in the settings file.
+
 ### Cartridges
 
 `.crt` files (File → Insert cartridge, or pass/drop the file to autostart):

@@ -540,8 +540,26 @@ package body GUI is
       Update_Status;
    end On_Drive_Type;
 
+   Item_PAL, Item_NTSC : Gtk_Radio_Menu_Item;
+
+   procedure On_Standard (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      Machine.Set_Video_Standard
+        (if Gtk_Radio_Menu_Item (Item) = Item_NTSC then Machine.NTSC
+         else Machine.PAL);
+      Machine.Reset;
+      Start_Time := Clock;
+      Frames_Run := 0;
+      Sync_Menu;
+   end On_Standard;
+
    procedure Save_Settings is
    begin
+      Settings.Set ("standard",
+                    (if Machine.Standard = Machine.NTSC then "ntsc" else "pal"));
       Settings.Set ("drive", (if Machine.Drive_Type = Drive1541.D1571
                               then "1571" else "1541"));
       Settings.Set ("reu", Integer (REU.Size));
@@ -801,6 +819,8 @@ package body GUI is
       Paint (Cr);
       Translate (Cr, Gdouble (OX), Gdouble (OY));
       Cairo.Scale (Cr, Gdouble (Scale), Gdouble (Scale * Y_Aspect));
+      Rectangle (Cr, 0.0, 0.0, Gdouble (SW), Gdouble (SH));
+      Clip (Cr);
       Set_Source_Surface (Cr, Surf, 0.0, 0.0);
       Cairo.Pattern.Set_Filter (Get_Source (Cr), Cairo.Pattern.Cairo_Filter_Nearest);
       Paint (Cr);
@@ -969,7 +989,7 @@ package body GUI is
          declare
             Elapsed : constant Duration := To_Duration (Now - Start_Time);
             Due : constant Integer :=
-              Integer (Float (Elapsed) * 50.125) - Frames_Run;
+              Integer (Float (Elapsed) * Machine.Frame_Rate) - Frames_Run;
          begin
             if Due > 10 then
                --  Fell far behind (e.g. modal dialog): resynchronise
@@ -1100,7 +1120,7 @@ package body GUI is
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
-      Drive_Group :
+      Drive_Group, Std_Group :
         Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -1172,6 +1192,10 @@ package body GUI is
                  On_Model'Access);
       Add_Radio (M_Machine, "Commodore 128", Model_Group, Item_C128,
                  On_Model'Access);
+      Add_Radio (M_Machine, "PAL (Europe, 50 Hz)", Std_Group, Item_PAL,
+                 On_Standard'Access);
+      Add_Radio (M_Machine, "NTSC (America, 60 Hz)", Std_Group, Item_NTSC,
+                 On_Standard'Access);
       Add_Separator (M_Machine);
       Add_Item (M_Machine, "_Reset (F12)", On_Reset'Access);
       Add_Separator (M_Machine);
@@ -1308,6 +1332,17 @@ package body GUI is
       Item_CRT.Set_Active (CRT_Filter);
       Updating_Menu := False;
 
+      if not Standard_Given and then Settings.Get ("standard", "pal") = "ntsc"
+      then
+         Machine.Set_Video_Standard (Machine.NTSC);
+      end if;
+      Updating_Menu := True;
+      if Machine.Standard = Machine.NTSC then
+         Item_NTSC.Set_Active (True);
+      else
+         Item_PAL.Set_Active (True);
+      end if;
+      Updating_Menu := False;
       Start_Machine (Start_Model);
       declare
          Want : constant String :=

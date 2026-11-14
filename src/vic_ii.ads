@@ -16,8 +16,8 @@ generic
    --  Colour RAM nibble, 0 .. 1023.
 package VIC_II is
 
-   Cycles_Per_Line : constant := 63;
-   Lines_Per_Frame : constant := 312;
+   Cycles_Per_Line : Natural := 63;     --  PAL 6569; NTSC 6567R8: 65
+   Lines_Per_Frame : Natural := 312;    --  PAL; NTSC: 263
 
    Raster        : Natural := 0;
    Line_Cycle    : Natural := 0;

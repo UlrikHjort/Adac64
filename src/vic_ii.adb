@@ -103,7 +103,7 @@ package body VIC_II is
 
    function Visible_Line return Boolean is
      (Raster >= First_Visible_Line
-      and then Raster < First_Visible_Line + VIC_Height);
+      and then Raster < First_Visible_Line + VIC_Visible_Lines);
 
    function Fetch_G (I : Natural) return Byte is
       D011 : constant Byte := Regs (16#11#);

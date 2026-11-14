@@ -11,7 +11,8 @@ package body Blit is
    function Width (S : Source) return Natural is
      (case S is when VIC_Screen => VIC_Width, when VDC_Screen => VDC_Width);
    function Height (S : Source) return Natural is
-     (case S is when VIC_Screen => VIC_Height, when VDC_Screen => VDC_Height);
+     (case S is when VIC_Screen => VIC_Visible_Lines,
+                when VDC_Screen => VDC_Height);
 
    procedure Copy (S : Source; Surface : Cairo.Cairo_Surface) is
       W : constant Natural := Width (S);

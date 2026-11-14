@@ -10,7 +10,9 @@ with Types; use Types;
 package SID is
 
    Sample_Rate : constant := 44_100;
-   Clock_Rate  : constant := 985_248;   --  PAL phi2
+   Clock_Rate  : Natural := 985_248;    --  phi2 (PAL; NTSC 1_022_727)
+
+   procedure Set_Clock (Hz : Natural);
 
    type Sample is range -32768 .. 32767;
    for Sample'Size use 16;

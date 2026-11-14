@@ -6,6 +6,7 @@ with Types; use Types;
 package VDC is
 
    procedure Reset;
+   procedure Set_Frame_Cycles (N : Natural);   --  computer cycles per frame
 
    function Read_Status return Byte;           --  $D600
    function Read_Data return Byte;             --  $D601

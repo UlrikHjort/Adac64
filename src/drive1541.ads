@@ -40,6 +40,9 @@ package Drive1541 is
    --  Run the drive until it has caught up with the given computer time
    --  (computer cycles at 985248 Hz; the drive runs at 1 MHz).
 
+   procedure Set_Host_Clock (Hz : Natural);
+   --  Computer clock (985248 Hz PAL, 1022727 Hz NTSC).
+
    procedure Set_Time (C64_Cycles : Long_Long_Integer);
    --  Align the drive clock with the computer time (drive was idle).
 

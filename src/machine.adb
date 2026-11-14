@@ -11,6 +11,7 @@ with SID;
 with VDC;
 with Keyboard;
 with Media;
+with Video;
 with Disasm;
 with CRT;
 with REU;
@@ -1072,6 +1073,26 @@ package body Machine is
    function Error_Message return String is (To_String (Err));
    function VDC_Enabled return Boolean is (Current_Model = C128);
    function Frame_Count return Natural is (Frames);
+
+   Current_Standard : Video_Standard := PAL;
+
+   procedure Set_Video_Standard (V : Video_Standard) is
+      Hz : constant Natural := (if V = PAL then 985_248 else 1_022_727);
+   begin
+      Current_Standard := V;
+      VIC.Cycles_Per_Line := (if V = PAL then 63 else 65);
+      VIC.Lines_Per_Frame := (if V = PAL then 312 else 263);
+      SID.Set_Clock (Hz);
+      Drive1541.Set_Host_Clock (Hz);
+      VDC.Set_Frame_Cycles (VIC.Cycles_Per_Line * VIC.Lines_Per_Frame);
+      Video.First_Visible_Line := (if V = PAL then 16 else 14);
+      Video.VIC_Visible_Lines := (if V = PAL then Video.VIC_Height else 249);
+   end Set_Video_Standard;
+
+   function Standard return Video_Standard is (Current_Standard);
+   function Frame_Rate return Float is
+     (if Current_Standard = PAL then 985_248.0 / 19_656.0
+      else 1_022_727.0 / 17_095.0);
    function Get_PC return Word is (CPU.PC);
 
    procedure Reset is
@@ -1518,7 +1539,7 @@ package body Machine is
    --  Snapshots
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP6";
+   Snapshot_Magic : constant String := "ADAC64SNAP7";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;
@@ -1529,6 +1550,7 @@ package body Machine is
       S := Stream (F);
       String'Write (S, Snapshot_Magic);
       Model_Type'Write (S, Current_Model);
+      Video_Standard'Write (S, Current_Standard);
       String'Output (S, Media.Attached_Path);
       Byte_Array'Write (S, Mem);
       Byte_Array'Write (S, Color_RAM);
@@ -1594,6 +1616,12 @@ package body Machine is
          return;
       end if;
       Model_Type'Read (S, Current_Model);
+      declare
+         V : Video_Standard;
+      begin
+         Video_Standard'Read (S, V);
+         Set_Video_Standard (V);
+      end;
       declare
          Disk_Path : constant String := String'Input (S);
          Attached : Boolean;

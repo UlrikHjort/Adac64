@@ -24,6 +24,12 @@ package Machine is
 
    Key_4080_Down : Boolean := False;   --  C128 40/80 DISPLAY key locked down
 
+   type Video_Standard is (PAL, NTSC);
+   procedure Set_Video_Standard (V : Video_Standard);
+   --  Takes effect immediately (call Reset afterwards).
+   function Standard return Video_Standard;
+   function Frame_Rate return Float;     --  50.125 (PAL) / 59.826 (NTSC)
+
    procedure Type_Text (S : String);
    --  Queue text to be fed into the KERNAL keyboard buffer.
 

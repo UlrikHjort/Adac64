@@ -10,7 +10,7 @@ package body VDC is
 
    Frame_Cycle : Natural := 0;
    Frame_Count : Natural := 0;
-   Cycles_Per_Frame : constant := 19_656;
+   Cycles_Per_Frame : Natural := 19_656;
 
    Read_Mask : constant array (0 .. 37) of Byte :=
      (16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#E0#, 16#00#, 16#00#,
@@ -30,6 +30,11 @@ package body VDC is
       Regs (18) := Byte ((A / 256) mod 256);
       Regs (19) := Byte (A mod 256);
    end Set_Update_Addr;
+
+   procedure Set_Frame_Cycles (N : Natural) is
+   begin
+      Cycles_Per_Frame := N;
+   end Set_Frame_Cycles;
 
    procedure Reset is
    begin

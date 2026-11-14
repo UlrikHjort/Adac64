@@ -7,7 +7,8 @@ package Video is
    --  VIC-II output (PAL): 384 x 272 visible pixels
    VIC_Width  : constant := 384;
    VIC_Height : constant := 272;
-   First_Visible_Line : constant := 16;
+   First_Visible_Line : Natural := 16;    --  NTSC: 14
+   VIC_Visible_Lines  : Natural := VIC_Height;   --  NTSC: 249
 
    type VIC_Frame is array (0 .. VIC_Height - 1, 0 .. VIC_Width - 1) of Pixel;
    VIC_FB : VIC_Frame := (others => (others => 0));

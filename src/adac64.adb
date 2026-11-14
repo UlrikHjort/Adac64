@@ -8,6 +8,7 @@
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --list-joysticks   list host game controllers and exit
+--    --pal / --ntsc     video standard (default: last used / PAL)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
 --    --attach FILE      attach a disk image without autostarting
@@ -48,6 +49,7 @@ procedure AdaC64 is
    Model    : Machine.Model_Type := Machine.C64;
    Model_Given, Key80_Given, REU_Given : Boolean := False;
    Drive_Kind : Unbounded_String;
+   Std_Given : Boolean := False;
    ROM_Dir  : Unbounded_String := To_Unbounded_String ("/usr/share/vice");
    Headless : Natural := 0;
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
@@ -127,6 +129,12 @@ begin
                Host_Joystick.Close;
             end loop;
             return;
+         elsif A = "--ntsc" then
+            Machine.Set_Video_Standard (Machine.NTSC);
+            Std_Given := True;
+         elsif A = "--pal" then
+            Machine.Set_Video_Standard (Machine.PAL);
+            Std_Given := True;
          elsif A = "--drive" and then I < Argument_Count then
             I := I + 1;
             Drive_Kind := To_Unbounded_String (Argument (I));
@@ -187,6 +195,7 @@ begin
 
    if Headless = 0 then
       GUI.Drive_Choice := Drive_Kind;
+      GUI.Standard_Given := Std_Given;
       GUI.Run (Model, To_String (ROM_Dir), To_String (File),
                Model_Given, Key80_Given, REU_Given);
       return;

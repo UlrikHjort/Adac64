@@ -32,6 +32,7 @@ package body Drive1541 is
 
    VIA1, VIA2 : VIA.Chip;
    Drive_Time : Long_Long_Integer := 0;
+   Host_Clock : Long_Long_Integer := 985_248;
 
    ---------------------------------------------------------------------
    --  Disk surface
@@ -831,9 +832,14 @@ package body Drive1541 is
       CPU.Reset;
    end Reset;
 
+   procedure Set_Host_Clock (Hz : Natural) is
+   begin
+      Host_Clock := Long_Long_Integer (Hz);
+   end Set_Host_Clock;
+
    procedure Set_Time (C64_Cycles : Long_Long_Integer) is
    begin
-      Drive_Time := C64_Cycles * 2_000_000 / 985_248;
+      Drive_Time := C64_Cycles * 2_000_000 / Host_Clock;
    end Set_Time;
 
    procedure ATN_Changed is
@@ -844,7 +850,7 @@ package body Drive1541 is
    procedure Run_Until (C64_Cycles : Long_Long_Integer) is
       --  Drive time is counted in half microseconds (the 1571 can run
       --  its CPU at 2 MHz)
-      Target : constant Long_Long_Integer := C64_Cycles * 2_000_000 / 985_248;
+      Target : constant Long_Long_Integer := C64_Cycles * 2_000_000 / Host_Clock;
       N : Natural;
       Unit : Long_Long_Integer;
    begin
