@@ -12,9 +12,12 @@ package Source_View is
    --  Add Language_Dir (holding acme6502.lang) to the language search
    --  path; call once before creating views.
 
+   type Language is (Assembly, Basic_Text);
    procedure Gtk_New (View   : out Gtk.Text_View.Gtk_Text_View;
-                      Buffer : out Gtk.Text_Buffer.Gtk_Text_Buffer);
-   --  A source view with 6502 highlighting, line numbers and a mark gutter.
+                      Buffer : out Gtk.Text_Buffer.Gtk_Text_Buffer;
+                      Lang   : Language := Assembly);
+   --  A source view with 6502 assembly or Commodore BASIC highlighting,
+   --  line numbers and a mark gutter.
 
    procedure Set_Dark (Buffer : Gtk.Text_Buffer.Gtk_Text_Buffer;
                        Dark : Boolean);

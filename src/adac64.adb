@@ -10,6 +10,8 @@
 --    --list-joysticks   list host game controllers and exit
 --    --pal / --ntsc     video standard (default: last used / PAL)
 --    --asm SRC [-o OUT] assemble a source file and exit
+--    --basic SRC        tokenize a .bas file (BASIC 7.0 with --c128) and exit
+--    --list PRG         print the BASIC listing of a .prg file
 --    --studio [SRC]     open the studio (assembler IDE and debugger)
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
@@ -42,6 +44,7 @@ with REU;
 with Drive1541;
 with SID;
 with Asm;
+with Basic;
 with Wav_Sink;
 
 procedure AdaC64 is
@@ -120,9 +123,35 @@ begin
                end if;
                return;
             end;
+         elsif A = "--basic" and then I < Argument_Count then
+            declare
+               PRG : Unbounded_String;
+               C128_Wanted : Boolean := False;
+            begin
+               for K in 1 .. Argument_Count loop
+                  C128_Wanted := C128_Wanted or else Argument (K) = "--c128";
+               end loop;
+               Basic.Report := Print_Line'Unrestricted_Access;
+               Basic.Build (Argument (I + 1),
+                            (if C128_Wanted then Basic.V7 else Basic.V2),
+                            PRG, Ok);
+               if not Ok then
+                  Set_Exit_Status (Failure);
+               end if;
+               return;
+            end;
+         elsif A = "--list" and then I < Argument_Count then
+            Put (Basic.List_PRG (Argument (I + 1), Ok));
+            if not Ok then
+               Put_Line (Standard_Error, "cannot read " & Argument (I + 1));
+               Set_Exit_Status (Failure);
+            end if;
+            return;
          elsif A = "--studio" then
             GUI.Open_Studio := True;
-            if I < Argument_Count and then Asm.Is_Source (Argument (I + 1))
+            if I < Argument_Count and then
+              (Asm.Is_Source (Argument (I + 1))
+               or else Basic.Is_Source (Argument (I + 1)))
             then
                I := I + 1;
                GUI.Studio_File := To_Unbounded_String (Argument (I));
@@ -236,11 +265,27 @@ begin
       I := I + 1;
    end loop;
 
-   if Length (File) > 0 and then Asm.Is_Source (To_String (File))
-     and then GUI.Open_Studio
+   if Length (File) > 0 and then GUI.Open_Studio
+     and then (Asm.Is_Source (To_String (File))
+               or else Basic.Is_Source (To_String (File)))
    then
       GUI.Studio_File := File;
       File := Null_Unbounded_String;
+   elsif Length (File) > 0 and then Basic.Is_Source (To_String (File)) then
+      declare
+         PRG : Unbounded_String;
+      begin
+         Basic.Report := Print_Line'Unrestricted_Access;
+         Basic.Build (To_String (File),
+                      (if Machine."=" (Model, Machine.C128) then Basic.V7
+                       else Basic.V2),
+                      PRG, Ok);
+         if not Ok then
+            Set_Exit_Status (Failure);
+            return;
+         end if;
+         File := PRG;
+      end;
    elsif Length (File) > 0 and then Asm.Is_Source (To_String (File)) then
       declare
          PRG : Unbounded_String;

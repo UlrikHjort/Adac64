@@ -47,9 +47,12 @@ with GNAT.Strings;
 with Types; use Types;
 with Machine;
 with Asm;
+with Basic;
+use type Basic.Dialect;
 with Disasm;
 with Settings;
 with Source_View;
+use type Source_View.Language;
 with Interfaces; use Interfaces;
 
 package body Studio is
@@ -80,12 +83,18 @@ package body Studio is
       Scroll : Gtk_Scrolled_Window;
       Label  : Gtk_Label;
       Path   : Unbounded_String;
+      Lang   : Source_View.Language := Source_View.Assembly;
    end record;
    Tabs : array (1 .. Max_Tabs) of Tab;
 
    Main_File   : Unbounded_String;    --  file that is assembled
    Stop_Shown  : Boolean := False;
    Built       : Boolean := False;    --  debug info is current
+   type Program_Kind is (No_Program, Asm_Program, Basic_Program);
+   Last_Kind   : Program_Kind := No_Program;
+   Basic_File  : Unbounded_String;    --  last tokenized BASIC source
+   Basic_Line  : Integer := -1;       --  BASIC line shown as running
+   Last_Basic_Check : Time := Clock;
    Last_Update : Time := Clock;
    Stop_Cycles : Long_Long_Integer := 0;
    Mono : constant String := "Monospace 10";
@@ -244,7 +253,8 @@ package body Studio is
          return False;
    end Write_File;
 
-   function New_Tab (Path : String; Text : String) return Natural is
+   function New_Tab (Path : String; Text : String;
+                     Is_Basic : Boolean := False) return Natural is
       T : Natural := 0;
       Dummy : Gint;
    begin
@@ -260,7 +270,10 @@ package body Studio is
       end if;
       Tabs (T).Used := True;
       Tabs (T).Path := To_Unbounded_String (Path);
-      Source_View.Gtk_New (Tabs (T).View, Tabs (T).Buffer);
+      Tabs (T).Lang :=
+        (if Is_Basic or else Basic.Is_Source (Path)
+         then Source_View.Basic_Text else Source_View.Assembly);
+      Source_View.Gtk_New (Tabs (T).View, Tabs (T).Buffer, Tabs (T).Lang);
       Tabs (T).View.Modify_Font (Pango.Font.From_String ("Monospace 11"));
       Source_View.Begin_Not_Undoable (Tabs (T).Buffer);
       Tabs (T).Buffer.Set_Text (Text);
@@ -327,7 +340,8 @@ package body Studio is
    end Cursor_Line;
 
    function Choose_File (Title : String; Save : Boolean;
-                         Name : String := "") return String is
+                         Name : String := "";
+                         PRG_Files : Boolean := False) return String is
       Dlg : Gtk_File_Chooser_Dialog;
       W : Gtk_Widget;
       Filter_Src, Filter_All : Gtk_File_Filter;
@@ -342,13 +356,20 @@ package body Studio is
       W := Dlg.Add_Button ((if Save then "_Save" else "_Open"),
                            Gtk_Response_Accept);
       Gtk_New (Filter_Src);
-      Filter_Src.Set_Name ("Assembly sources");
-      for P of GNAT.Strings.String_List'(new String'("*.asm"), new String'("*.a"),
-                             new String'("*.s"), new String'("*.a65"),
-                             new String'("*.inc"), new String'("*.src"))
-      loop
-         Filter_Src.Add_Pattern (P.all);
-      end loop;
+      if PRG_Files then
+         Filter_Src.Set_Name ("C64 programs (*.prg)");
+         Filter_Src.Add_Pattern ("*.prg");
+         Filter_Src.Add_Pattern ("*.PRG");
+      else
+         Filter_Src.Set_Name ("Sources (assembly, BASIC)");
+         for P of GNAT.Strings.String_List'
+           (new String'("*.asm"), new String'("*.a"), new String'("*.s"),
+            new String'("*.a65"), new String'("*.inc"), new String'("*.src"),
+            new String'("*.bas"))
+         loop
+            Filter_Src.Add_Pattern (P.all);
+         end loop;
+      end if;
       Gtk_New (Filter_All);
       Filter_All.Set_Name ("All files");
       Filter_All.Add_Pattern ("*");
@@ -382,7 +403,10 @@ package body Studio is
          declare
             P : constant String :=
               Choose_File ("Save source", True,
-                           Base_Name (To_String (Tabs (T).Path)));
+                           (if Tabs (T).Path /= Null_Unbounded_String
+                            then Base_Name (To_String (Tabs (T).Path))
+                            elsif Tabs (T).Lang = Source_View.Basic_Text
+                            then "program.bas" else "program.asm"));
          begin
             if P = "" then
                return False;
@@ -477,6 +501,15 @@ package body Studio is
      ASCII.LF &
      "message !scr ""hello from adac64 studio"", 0" & ASCII.LF;
 
+   Basic_Template : constant String :=
+     "10 rem adac64 studio - f5 runs this program" & ASCII.LF &
+     "20 print ""{clr}{wht}hello from {yel}adac64{wht} studio""" & ASCII.LF &
+     "30 for i=1 to 15" & ASCII.LF &
+     "40 print tab(i);""{lblu}*""" & ASCII.LF &
+     "50 for t=1 to 100: next t" & ASCII.LF &
+     "60 next i" & ASCII.LF &
+     "70 print ""{down}{wht}done.""" & ASCII.LF;
+
    ---------------------------------------------------------------------
    --  Debugger panels
    ---------------------------------------------------------------------
@@ -512,7 +545,7 @@ package body Studio is
    procedure Update_Registers is
       Cyc : constant Long_Long_Integer := Machine.Cycle_Count;
       PC  : constant Word := Machine.CPU_PC;
-      Lbl : constant String := Asm.Label_At (PC);
+      Lbl : constant String := (if Built then Asm.Label_At (PC) else "");
    begin
       Regs.Set_Text
         (Machine.Register_Text & ASCII.LF &
@@ -707,6 +740,38 @@ package body Studio is
       Print (To_String (R));
    end Report;
 
+   function Dialect return Basic.Dialect is
+     (if Machine.In_C64_Mode then Basic.V2 else Basic.V7);
+
+   function Build_Basic (T : Positive) return Boolean is
+      PRG : Unbounded_String;
+      Ok : Boolean;
+      Path : constant String := To_String (Tabs (T).Path);
+   begin
+      Out_Buf.Set_Text ("");
+      Print ("tokenizing " & Path & " (BASIC " &
+             (if Dialect = Basic.V2 then "V2, C64)" else "7.0, C128)"));
+      Print ("");
+      Basic.Report := Report'Access;
+      Basic.Build (Path, Dialect, PRG, Ok);
+      for E in 1 .. Basic.Error_Count loop
+         if Basic.Error_Line (E) > 0 then
+            Source_View.Add_Mark (Tabs (T).Buffer, Source_View.Error_Line,
+                                  Basic.Error_Line (E) - 1);
+         end if;
+      end loop;
+      if Basic.Error_Count > 0 and then Basic.Error_Line (1) > 0 then
+         Goto_Line (T, Basic.Error_Line (1));
+      end if;
+      Built := False;
+      Machine.Clear_Breakpoints;
+      Basic_File := Tabs (T).Path;
+      Last_Kind := (if Ok then Basic_Program else No_Program);
+      Set_Status (if Ok then "built " & Base_Name (To_String (PRG))
+                  else "build failed");
+      return Ok;
+   end Build_Basic;
+
    function Build return Boolean is
       PRG : Unbounded_String;
       Ok : Boolean;
@@ -718,7 +783,17 @@ package body Studio is
       if not Save_All then
          return False;
       end if;
-      if Main_File = Null_Unbounded_String then
+      for I in Tabs'Range loop
+         if Tabs (I).Used then
+            Source_View.Clear_Marks (Tabs (I).Buffer, Source_View.Error_Line);
+         end if;
+      end loop;
+      if Tabs (Current_Tab).Lang = Source_View.Basic_Text then
+         return Build_Basic (Current_Tab);
+      end if;
+      if Main_File = Null_Unbounded_String
+        or else Basic.Is_Source (To_String (Main_File))
+      then
          Main_File := Tabs (Current_Tab).Path;
          Update_Title;
       end if;
@@ -756,8 +831,30 @@ package body Studio is
       Set_Status (if Ok then "built " & Base_Name (To_String (PRG))
                   else "build failed");
       Apply_Breakpoints;
+      Last_Kind := (if Ok then Asm_Program else No_Program);
       return Ok;
    end Build;
+
+   procedure Run_Basic is
+      Data : Byte_Array (0 .. Basic.Program_Length - 1);
+   begin
+      for I in Data'Range loop
+         Data (I) := Basic.Program_Byte (I);
+      end loop;
+      Clear_PC_Marks;
+      if Machine.Break_Hit then
+         Machine.Resume;
+      end if;
+      Stop_Shown := False;
+      Basic_Line := -1;
+      Machine.Inject_And_Run (Data, Basic.Program_Load, "RUN");
+      Print ("running: reset, load BASIC at $" & Hex4 (Basic.Program_Load)
+             & ", RUN");
+      Set_Status ("running");
+      if Parent_W /= null then
+         Parent_W.Present;
+      end if;
+   end Run_Basic;
 
    procedure Run_Program is
       Low  : constant Word := Asm.Low_Address;
@@ -769,6 +866,10 @@ package body Studio is
         (if Asm.Has_Basic_Stub and then Low = Basic_Start then "RUN"
          else "SYS" & Natural'Image (Natural (Asm.Start_Address)));
    begin
+      if Last_Kind = Basic_Program then
+         Run_Basic;
+         return;
+      end if;
       for I in Data'Range loop
          Data (I) := Asm.Output_Byte (Low + Word (I));
       end loop;
@@ -831,7 +932,7 @@ package body Studio is
    ---------------------------------------------------------------------
 
    type Action is
-     (A_New, A_Open, A_Save, A_Save_As, A_Close_Tab, A_Set_Main,
+     (A_New, A_New_Basic, A_Import_PRG, A_Fetch_Basic, A_Open, A_Save, A_Save_As, A_Close_Tab, A_Set_Main,
       A_Undo, A_Redo, A_Close,
       A_Build, A_Run, A_Rebuild_Run, A_Pause, A_Step_Into, A_Step_Over,
       A_Step_Out, A_Run_To_Cursor, A_Toggle_BP, A_Clear_BPs, A_Reset,
@@ -845,6 +946,40 @@ package body Studio is
       case A is
          when A_New =>
             Dummy := New_Tab ("", Template) > 0;
+         when A_New_Basic =>
+            Dummy := New_Tab ("", Basic_Template, Is_Basic => True) > 0;
+         when A_Import_PRG =>
+            declare
+               P : constant String :=
+                 Choose_File ("Import BASIC program", False, PRG_Files => True);
+               Ok : Boolean;
+            begin
+               if P /= "" then
+                  declare
+                     Text : constant String := Basic.List_PRG (P, Ok);
+                  begin
+                     if Ok and then Text /= "" then
+                        Dummy := New_Tab ("", Text, Is_Basic => True) > 0;
+                        Print ("imported " & P & " (save it as .bas)");
+                     else
+                        Print ("no BASIC program in " & P);
+                     end if;
+                  end;
+               end if;
+            end;
+         when A_Fetch_Basic =>
+            declare
+               Text : constant String :=
+                 Basic.Detokenize (Machine.Peek'Access,
+                                   Basic.Load_Address (Dialect), Dialect);
+            begin
+               if Text = "" then
+                  Print ("no BASIC program in the emulator's memory");
+               else
+                  Dummy := New_Tab ("", Text, Is_Basic => True) > 0;
+                  Print ("listed the BASIC program from memory");
+               end if;
+            end;
          when A_Open =>
             declare
                P : constant String := Choose_File ("Open source", False);
@@ -968,6 +1103,9 @@ package body Studio is
                    "watch box: ""$d020 w"", ""score rw"", ""$0400-$07e7 w""");
             Print ("Click an error line here to jump to it.  Syntax: see " &
                    "the header of src/asm.ads (ACME style).");
+            Print ("BASIC (.bas, Ctrl+Shift+N): F5 tokenizes and runs the " &
+                   "current tab; the running line is highlighted.  Codes: " &
+                   "{clr} {wht} {rvon} {3 down} {$xx}, see src/basic.ads.");
       end case;
    end Do_Action;
 
@@ -1217,11 +1355,17 @@ package body Studio is
       VBox.Pack_Start (Bar, Expand => False, Fill => False);
 
       M := Menu ("_File");
-      Item (M, "_New", A_New, GDK_LC_n, Control_Mask);
+      Item (M, "_New assembly source", A_New, GDK_LC_n, Control_Mask);
+      Item (M, "New _BASIC program", A_New_Basic, GDK_LC_n,
+            Control_Mask or Shift_Mask);
       Item (M, "_Open...", A_Open, GDK_LC_o, Control_Mask);
       Item (M, "_Save", A_Save, GDK_LC_s, Control_Mask);
       Item (M, "Save _as...", A_Save_As, GDK_LC_s, Control_Mask or Shift_Mask);
       Item (M, "Set as _main file", A_Set_Main);
+      Separator (M);
+      Item (M, "_Import BASIC PRG...", A_Import_PRG);
+      Item (M, "_Get BASIC program from emulator", A_Fetch_Basic);
+      Separator (M);
       Item (M, "_Close tab", A_Close_Tab, GDK_LC_w, Control_Mask);
       Separator (M);
       Item (M, "Close studio", A_Close);
@@ -1424,6 +1568,39 @@ package body Studio is
       Settings.Set ("studio_main", To_String (Main_File));
    end Save_State;
 
+   --  Highlight the BASIC line being executed (CURLIN)
+   procedure Track_Basic_Line is
+      Base : constant Word := (if Machine.In_C64_Mode then 16#39# else 16#3B#);
+      Hi : constant Byte := Machine.Peek (Base + 1);
+      --  Direct mode: CURLIN high byte $FF, or the KERNAL message flag
+      --  (MSGFLG, $9D) set to $80 by BASIC's READY loop
+      Direct : constant Boolean :=
+        Hi = 16#FF# or else (Machine.Peek (16#9D#) and 16#80#) /= 0;
+      N  : constant Integer :=
+        (if Direct then -1
+         else Natural (Machine.Peek (Base)) + 256 * Natural (Hi));
+      T  : constant Natural := Find_Tab (To_String (Basic_File));
+   begin
+      if N = Basic_Line or else T = 0 then
+         return;
+      end if;
+      Basic_Line := N;
+      Source_View.Clear_Marks (Tabs (T).Buffer, Source_View.Current_PC);
+      if N >= 0 then
+         declare
+            L : constant Natural := Basic.Source_Line_Of (N);
+         begin
+            if L > 0 then
+               Source_View.Add_Mark (Tabs (T).Buffer, Source_View.Current_PC,
+                                     L - 1);
+            end if;
+         end;
+         Set_Status ("running BASIC line" & N'Image);
+      else
+         Set_Status ("BASIC: ready (direct mode)");
+      end if;
+   end Track_Basic_Line;
+
    procedure Tick is
    begin
       if Win = null then
@@ -1436,6 +1613,12 @@ package body Studio is
       else
          if Stop_Shown then
             Resumed;
+         end if;
+         if Last_Kind = Basic_Program
+           and then Clock - Last_Basic_Check > Milliseconds (100)
+         then
+            Last_Basic_Check := Clock;
+            Track_Basic_Line;
          end if;
          if Win.Get_Visible and then Clock - Last_Update > Milliseconds (250)
          then

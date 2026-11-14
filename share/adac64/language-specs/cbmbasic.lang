@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Commodore BASIC V2 / 7.0 text (AdaC64 studio) -->
+<language id="cbmbasic" name="Commodore BASIC" version="2.0" _section="Source">
+  <metadata>
+    <property name="globs">*.bas</property>
+  </metadata>
+  <styles>
+    <style id="comment"  name="REM"         map-to="def:comment"/>
+    <style id="string"   name="String"      map-to="def:string"/>
+    <style id="code"     name="Control code" map-to="def:special-char"/>
+    <style id="keyword"  name="Keyword"     map-to="def:keyword"/>
+    <style id="keyword7" name="BASIC 7.0 keyword" map-to="def:builtin"/>
+    <style id="number"   name="Number"      map-to="def:number"/>
+    <style id="lineno"   name="Line number" map-to="def:preprocessor"/>
+  </styles>
+  <default-regex-options case-sensitive="false"/>
+  <definitions>
+    <context id="code" style-ref="code">
+      <match>\{[^}]*\}</match>
+    </context>
+    <context id="cbmbasic">
+      <include>
+        <context id="lineno" style-ref="lineno">
+          <match>^\s*[0-9]+</match>
+        </context>
+        <context id="rem" style-ref="comment" end-at-line-end="true">
+          <start>\brem</start>
+          <include><context ref="code"/></include>
+        </context>
+        <context id="string" style-ref="string" end-at-line-end="true">
+          <start>"</start>
+          <end>"</end>
+          <include><context ref="code"/></include>
+        </context>
+        <context ref="code"/>
+        <context id="keyword" style-ref="keyword">
+          <prefix></prefix>
+          <suffix></suffix>
+          <keyword>restore</keyword>
+          <keyword>input#</keyword>
+          <keyword>return</keyword>
+          <keyword>verify</keyword>
+          <keyword>print#</keyword>
+          <keyword>right\$</keyword>
+          <keyword>input</keyword>
+          <keyword>gosub</keyword>
+          <keyword>print</keyword>
+          <keyword>close</keyword>
+          <keyword>left\$</keyword>
+          <keyword>next</keyword>
+          <keyword>data</keyword>
+          <keyword>read</keyword>
+          <keyword>goto</keyword>
+          <keyword>stop</keyword>
+          <keyword>wait</keyword>
+          <keyword>load</keyword>
+          <keyword>save</keyword>
+          <keyword>poke</keyword>
+          <keyword>cont</keyword>
+          <keyword>list</keyword>
+          <keyword>open</keyword>
+          <keyword>tab\(</keyword>
+          <keyword>spc\(</keyword>
+          <keyword>then</keyword>
+          <keyword>step</keyword>
+          <keyword>peek</keyword>
+          <keyword>str\$</keyword>
+          <keyword>chr\$</keyword>
+          <keyword>mid\$</keyword>
+          <keyword>end</keyword>
+          <keyword>for</keyword>
+          <keyword>dim</keyword>
+          <keyword>let</keyword>
+          <keyword>run</keyword>
+          <keyword>rem</keyword>
+          <keyword>def</keyword>
+          <keyword>clr</keyword>
+          <keyword>cmd</keyword>
+          <keyword>sys</keyword>
+          <keyword>get</keyword>
+          <keyword>new</keyword>
+          <keyword>not</keyword>
+          <keyword>and</keyword>
+          <keyword>sgn</keyword>
+          <keyword>int</keyword>
+          <keyword>abs</keyword>
+          <keyword>usr</keyword>
+          <keyword>fre</keyword>
+          <keyword>pos</keyword>
+          <keyword>sqr</keyword>
+          <keyword>rnd</keyword>
+          <keyword>log</keyword>
+          <keyword>exp</keyword>
+          <keyword>cos</keyword>
+          <keyword>sin</keyword>
+          <keyword>tan</keyword>
+          <keyword>atn</keyword>
+          <keyword>len</keyword>
+          <keyword>val</keyword>
+          <keyword>asc</keyword>
+          <keyword>if</keyword>
+          <keyword>on</keyword>
+          <keyword>to</keyword>
+          <keyword>fn</keyword>
+          <keyword>or</keyword>
+          <keyword>go</keyword>
+        </context>
+        <context id="keyword7" style-ref="keyword7">
+          <prefix></prefix>
+          <suffix></suffix>
+          <keyword>directory</keyword>
+          <keyword>collision</keyword>
+          <keyword>renumber</keyword>
+          <keyword>rspcolor</keyword>
+          <keyword>sprcolor</keyword>
+          <keyword>envelope</keyword>
+          <keyword>graphic</keyword>
+          <keyword>scratch</keyword>
+          <keyword>collect</keyword>
+          <keyword>monitor</keyword>
+          <keyword>rsprite</keyword>
+          <keyword>rwindow</keyword>
+          <keyword>pointer</keyword>
+          <keyword>catalog</keyword>
+          <keyword>dverify</keyword>
+          <keyword>resume</keyword>
+          <keyword>circle</keyword>
+          <keyword>gshape</keyword>
+          <keyword>sshape</keyword>
+          <keyword>locate</keyword>
+          <keyword>scnclr</keyword>
+          <keyword>header</keyword>
+          <keyword>rename</keyword>
+          <keyword>backup</keyword>
+          <keyword>delete</keyword>
+          <keyword>rsppos</keyword>
+          <keyword>filter</keyword>
+          <keyword>movspr</keyword>
+          <keyword>sprite</keyword>
+          <keyword>append</keyword>
+          <keyword>dclose</keyword>
+          <keyword>record</keyword>
+          <keyword>concat</keyword>
+          <keyword>dclear</keyword>
+          <keyword>sprsav</keyword>
+          <keyword>window</keyword>
+          <keyword>sprdef</keyword>
+          <keyword>instr</keyword>
+          <keyword>troff</keyword>
+          <keyword>sound</keyword>
+          <keyword>pudef</keyword>
+          <keyword>paint</keyword>
+          <keyword>color</keyword>
+          <keyword>scale</keyword>
+          <keyword>dsave</keyword>
+          <keyword>dload</keyword>
+          <keyword>using</keyword>
+          <keyword>until</keyword>
+          <keyword>while</keyword>
+          <keyword>tempo</keyword>
+          <keyword>sleep</keyword>
+          <keyword>dopen</keyword>
+          <keyword>bsave</keyword>
+          <keyword>bload</keyword>
+          <keyword>begin</keyword>
+          <keyword>width</keyword>
+          <keyword>stash</keyword>
+          <keyword>fetch</keyword>
+          <keyword>rclr</keyword>
+          <keyword>rdot</keyword>
+          <keyword>hex\$</keyword>
+          <keyword>err\$</keyword>
+          <keyword>else</keyword>
+          <keyword>trap</keyword>
+          <keyword>tron</keyword>
+          <keyword>auto</keyword>
+          <keyword>char</keyword>
+          <keyword>draw</keyword>
+          <keyword>help</keyword>
+          <keyword>loop</keyword>
+          <keyword>exit</keyword>
+          <keyword>copy</keyword>
+          <keyword>bump</keyword>
+          <keyword>bank</keyword>
+          <keyword>play</keyword>
+          <keyword>rreg</keyword>
+          <keyword>bend</keyword>
+          <keyword>boot</keyword>
+          <keyword>quit</keyword>
+          <keyword>swap</keyword>
+          <keyword>fast</keyword>
+          <keyword>slow</keyword>
+          <keyword>rgr</keyword>
+          <keyword>joy</keyword>
+          <keyword>dec</keyword>
+          <keyword>vol</keyword>
+          <keyword>box</keyword>
+          <keyword>key</keyword>
+          <keyword>pot</keyword>
+          <keyword>pen</keyword>
+          <keyword>xor</keyword>
+          <keyword>off</keyword>
+          <keyword>do</keyword>
+        </context>
+        <context id="number" style-ref="number">
+          <match>\b[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?</match>
+        </context>
+      </include>
+    </context>
+  </definitions>
+</language>

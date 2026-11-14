@@ -10,7 +10,7 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
     bin/adac64            # C64
     bin/adac64 --c128     # C128, 40 columns
     bin/adac64 --c128 --80
-    bin/adac64 game.d64   # autostart (also .t64 / .prg / .asm)
+    bin/adac64 game.d64   # autostart (also .t64 / .prg / .asm / .bas)
     bin/adac64 --studio   # assembler IDE and debugger
     make tests            # keyboard, CPU and debugger tests
 
@@ -197,6 +197,27 @@ several passes, and the illegal opcodes (`lax sax dcp isc slo rla sre rra
 anc alr arr sbx ...`) are available. All 151 legal opcodes assemble
 identically to 64tass; `tests/debug_test` exercises the debugger.
 
+### BASIC programs
+
+`.bas` files are Commodore BASIC as text (petcat style): numbered lines,
+keywords in any case, `?` for PRINT. In strings lower-case letters are the
+normal PETSCII letters and upper-case ones the shifted letters; special
+characters are written in braces: `{clr} {home} {wht} {red} {rvon} {rvof}
+{down} {3 down} {left*2} {f1} {pi} {pound} {$a6}` (see `src/basic.ads`).
+
+In the studio, File → New BASIC program (Ctrl+Shift+N) gives a BASIC tab;
+F5 tokenizes it (BASIC V2 on the C64, BASIC 7.0 with its extra keywords on
+the C128), loads it and types RUN, and the line being executed is
+highlighted while it runs. File → Import BASIC PRG lists a program file,
+and File → Get BASIC program from emulator lists whatever is in the
+machine's memory (e.g. a program typed in by hand).
+
+On the command line: `bin/adac64 --basic prog.bas` writes `prog.prg`
+(`--c128` for BASIC 7.0), `bin/adac64 --list prog.prg` prints the listing,
+and `bin/adac64 prog.bas` tokenizes and runs it. `tests/basic_test.sh`
+types the test programs into the emulated C64 and C128 and checks that the
+real ROM tokenizers produce exactly the same bytes.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -239,8 +260,9 @@ Disk images can also be dropped onto the window.
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
     src/asm.*        6502 assembler (ACME syntax)
+    src/basic.*      BASIC V2 / 7.0 tokenizer and lister
     src/studio.*     studio window    src/source_view.*  GtkSourceView binding
-    share/adac64/    6502 syntax highlighting (language-specs/acme6502.lang)
+    share/adac64/    6502 syntax highlighting (language-specs/*.lang)
     tests/           CPU, keyboard and debugger tests, mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py

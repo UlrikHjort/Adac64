@@ -115,7 +115,7 @@ package body Source_View is
    Views : array (1 .. Max_Views) of Gtk_Text_View;
    View_Count : Natural := 0;
 
-   Lang : Ptr := Null_Address;
+   Langs : array (Language) of Ptr := (others => Null_Address);
    Dummy_Bool : Boolean;
 
    procedure Init (Language_Dir : String) is
@@ -128,7 +128,8 @@ package body Source_View is
          Null_Ptr);
    begin
       LM_Set_Search_Path (LM, Paths'Address);
-      Lang := LM_Get_Language (LM, New_String ("acme6502"));
+      Langs (Assembly) := LM_Get_Language (LM, New_String ("acme6502"));
+      Langs (Basic_Text) := LM_Get_Language (LM, New_String ("cbmbasic"));
    end Init;
 
    procedure On_Mark_Activated (V : Ptr; Iter : access Gtk_Text_Iter;
@@ -151,9 +152,10 @@ package body Source_View is
    end On_Mark_Activated;
 
    procedure Gtk_New (View   : out Gtk.Text_View.Gtk_Text_View;
-                      Buffer : out Gtk.Text_Buffer.Gtk_Text_Buffer) is
+                      Buffer : out Gtk.Text_Buffer.Gtk_Text_Buffer;
+                      Lang   : Language := Assembly) is
       B : constant Ptr :=
-        (if Lang /= Null_Address then Buffer_New (Lang)
+        (if Langs (Lang) /= Null_Address then Buffer_New (Langs (Lang))
          else Buffer_New_Plain (Null_Address));
       V : constant Ptr := View_New (B);
       Dummy : unsigned_long;
