@@ -46,6 +46,11 @@ package Machine is
    --  Use the emulated 1541 (needs a drive ROM) for D64 images; otherwise
    --  the KERNAL LOAD/SAVE traps are used.
 
+   Fast_Kernal_Load : Boolean := True;
+   --  With the emulated 1541 active, serve KERNAL LOADs from drive 8
+   --  instantly from the image, straight into RAM (like a fast-load
+   --  cartridge); custom loaders still talk to the emulated drive.
+
    Drive_ROM_Path : Ada.Strings.Unbounded.Unbounded_String;
    --  Optional explicit 1541 ROM file (16 KB).
 

@@ -24,6 +24,10 @@ package Media is
       Found : out Boolean);
    --  "$" yields a BASIC directory listing.  Wildcards '*' and '?' work.
 
+   function Last_Lookup_Unreliable return Boolean;
+   --  True if the last Find_File read sectors that did not decode cleanly
+   --  from a G64 (copy protection or damage).
+
    procedure Save_File (Name : Byte_Array; Data : Byte_Array; Ok : out Boolean);
    --  Save to the host directory (always, regardless of attached image).
 

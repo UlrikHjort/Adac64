@@ -16,6 +16,141 @@ package body Media is
    procedure Free is new Ada.Unchecked_Deallocation
      (Byte_Array, Byte_Array_Access);
 
+   --  Sector view used by the D64 routines: the D64 itself, or the
+   --  sectors decoded from a G64's GCR tracks.
+   Disk : Byte_Array_Access := null;
+   Max_Sectors : constant := 768;
+   Good : array (0 .. Max_Sectors - 1) of Boolean := (others => True);
+   Unreliable : Boolean := False;    --  last lookup touched a bad sector
+
+   function Sector_Good (Index : Natural) return Boolean is
+     (Index > Good'Last or else Good (Index));
+
+   function Last_Lookup_Unreliable return Boolean is (Unreliable);
+
+   GCR_Value : constant array (0 .. 31) of Integer :=
+     (16#0A# => 0, 16#0B# => 1, 16#12# => 2, 16#13# => 3, 16#0E# => 4,
+      16#0F# => 5, 16#16# => 6, 16#17# => 7, 16#09# => 8, 16#19# => 9,
+      16#1A# => 10, 16#1B# => 11, 16#0D# => 12, 16#1D# => 13,
+      16#1E# => 14, 16#15# => 15, others => -1);
+
+   procedure Decode_G64 is
+      SPT : constant array (1 .. 35) of Natural :=
+        (1 .. 17 => 21, 18 .. 24 => 19, 25 .. 30 => 18, 31 .. 35 => 17);
+      function LE16 (I : Natural) return Natural is
+        (Natural (Image (I)) + 256 * Natural (Image (I + 1)));
+      function LE32 (I : Natural) return Natural is
+        (LE16 (I) + 65536 * LE16 (I + 2));
+      Base : Natural := 0;
+   begin
+      Disk := new Byte_Array'(0 .. 174_847 => 0);
+      Good := (others => False);
+      for T in 1 .. 35 loop
+         declare
+            Off : constant Natural := LE32 (12 + 4 * (2 * T - 2));
+         begin
+            if Off /= 0 and then Off + 2 <= Image'Last then
+               declare
+                  Len  : constant Natural := LE16 (Off);
+                  Bits : constant Natural := Len * 8;
+                  Pending : Integer := -1;
+                  Ones : Natural := 0;
+                  P : Natural := 0;
+
+                  function Bit (Q : Natural) return Natural is
+                     R : constant Natural := Q mod Bits;
+                  begin
+                     return Natural
+                       (Shift_Right (Image (Off + 2 + R / 8), 7 - R mod 8)
+                        and 1);
+                  end Bit;
+
+                  --  Decode Count bytes starting at bit Q; Ok is False on
+                  --  any invalid GCR code.
+                  procedure Get (Q : Natural; Dst : out Byte_Array;
+                                 Ok : out Boolean) is
+                     V : Natural;
+                     N1, N2 : Integer;
+                  begin
+                     Ok := True;
+                     for K in Dst'Range loop
+                        V := 0;
+                        for B in 0 .. 9 loop
+                           V := V * 2 + Bit (Q + (K - Dst'First) * 10 + B);
+                        end loop;
+                        N1 := GCR_Value (V / 32);
+                        N2 := GCR_Value (V mod 32);
+                        if N1 < 0 or else N2 < 0 then
+                           Ok := False;
+                           Dst (K) := 0;
+                        else
+                           Dst (K) := Byte (N1 * 16 + N2);
+                        end if;
+                     end loop;
+                  end Get;
+               begin
+                  if Len > 0 and then Off + 1 + Len <= Image'Last then
+                     while P < Bits + 3000 loop
+                        if Bit (P) = 1 then
+                           Ones := Ones + 1;
+                           P := P + 1;
+                        elsif Ones >= 10 then
+                           Ones := 0;
+                           declare
+                              Hdr : Byte_Array (0 .. 7);
+                              Blk : Byte_Array (0 .. 259);
+                              Ok  : Boolean;
+                              Chk : Byte := 0;
+                           begin
+                              Get (P, Hdr (0 .. 0), Ok);
+                              if Ok and then Hdr (0) = 16#08# then
+                                 --  The two $0F padding bytes need not be
+                                 --  valid GCR in real dumps
+                                 Get (P, Hdr (0 .. 5), Ok);
+                                 Pending :=
+                                   (if Ok and then Natural (Hdr (3)) = T
+                                      and then Natural (Hdr (2)) < SPT (T)
+                                    then Integer (Hdr (2)) else -1);
+                                 P := P + 80;
+                              elsif Ok and then Hdr (0) = 16#07#
+                                and then Pending >= 0
+                              then
+                                 --  Only $07, the data and the checksum
+                                 --  must decode; the two padding bytes
+                                 --  after them often do not.
+                                 Get (P, Blk (0 .. 257), Ok);
+                                 for K in 1 .. 256 loop
+                                    Chk := Chk xor Blk (K);
+                                 end loop;
+                                 if Ok and then Chk = Blk (257) then
+                                    Disk (Base + Pending * 256 ..
+                                            Base + Pending * 256 + 255) :=
+                                      Blk (1 .. 256);
+                                    Good (Base / 256 + Pending) := True;
+                                 end if;
+                                 Pending := -1;
+                                 P := P + 2600;
+                              else
+                                 P := P + 1;
+                              end if;
+                           end;
+                        else
+                           Ones := 0;
+                           P := P + 1;
+                        end if;
+                     end loop;
+                  end if;
+               end;
+            end if;
+         end;
+         Base := Base + SPT (T) * 256;
+      end loop;
+   exception
+      when others =>
+         Disk := null;
+   end Decode_G64;
+
+
    ---------------------------------------------------------------------
    --  File helpers
    ---------------------------------------------------------------------
@@ -73,6 +208,13 @@ package body Media is
       else
          Image_Kind := PRG;
       end if;
+      Good := (others => True);
+      Disk := null;
+      if Image_Kind = D64 then
+         Disk := Image;
+      elsif Image_Kind = G64 then
+         Decode_G64;
+      end if;
       Image_Name := To_Unbounded_String (Ada.Directories.Simple_Name (Path));
       Image_Path := To_Unbounded_String (Path);
       --  Probe whether the file may be written back
@@ -95,6 +237,7 @@ package body Media is
          Free (Image);
       end if;
       Image_Kind := None;
+      Disk := null;
       Image_Name := Null_Unbounded_String;
    end Detach;
 
@@ -311,7 +454,7 @@ package body Media is
          Off := Off + Sectors_On (T);
       end loop;
       Off := (Off + Sector) * 256;
-      if Off + 255 > Image'Last then
+      if Off + 255 > Disk'Last then
          return -1;
       end if;
       return Off;
@@ -328,16 +471,19 @@ package body Media is
       loop
          Off := Sector_Offset (T, S);
          exit when Off < 0;
+         if not Sector_Good (Off / 256) then
+            Unreliable := True;
+         end if;
          Guard := Guard + 1;
          exit when Guard > 800;
          declare
-            NT : constant Natural := Natural (Image (Off));
-            NS : constant Natural := Natural (Image (Off + 1));
+            NT : constant Natural := Natural (Disk (Off));
+            NS : constant Natural := Natural (Disk (Off + 1));
             Last : constant Natural := (if NT = 0 then NS else 255);
          begin
             if Last >= 2 then
                for I in 2 .. Last loop
-                  Buf (Len) := Image (Off + I);
+                  Buf (Len) := Disk (Off + I);
                   Len := Len + 1;
                end loop;
             end if;
@@ -363,26 +509,29 @@ package body Media is
       loop
          Off := Sector_Offset (T, S);
          exit when Off < 0;
+         if not Sector_Good (Off / 256) then
+            Unreliable := True;
+         end if;
          Guard := Guard + 1;
          exit when Guard > 40;
          for E in 0 .. 7 loop
             declare
                B : constant Natural := Off + E * 32;
-               FT : constant Byte := Image (B + 2);
+               FT : constant Byte := Disk (B + 2);
             begin
                if FT /= 0 then
-                  Visit (FT, Natural (Image (B + 3)), Natural (Image (B + 4)),
-                         Trim_A0 (Image (B + 5 .. B + 20)),
-                         Natural (Image (B + 30)) +
-                           256 * Natural (Image (B + 31)), Stop);
+                  Visit (FT, Natural (Disk (B + 3)), Natural (Disk (B + 4)),
+                         Trim_A0 (Disk (B + 5 .. B + 20)),
+                         Natural (Disk (B + 30)) +
+                           256 * Natural (Disk (B + 31)), Stop);
                   exit when Stop;
                end if;
             end;
          end loop;
          exit when Stop;
-         exit when Image (Off) = 0;
-         T := Natural (Image (Off));
-         S := Natural (Image (Off + 1));
+         exit when Disk (Off) = 0;
+         T := Natural (Disk (Off));
+         S := Natural (Disk (Off + 1));
       end loop;
    end Walk_Directory;
 
@@ -406,12 +555,12 @@ package body Media is
          Add_Entry (L, Blocks, Name, TS);
       end Visit;
    begin
-      Start_Listing (L, Image (BAM + 16#90# .. BAM + 16#9F#),
-                     Image (BAM + 16#A2# .. BAM + 16#A6#));
+      Start_Listing (L, Disk (BAM + 16#90# .. BAM + 16#9F#),
+                     Disk (BAM + 16#A2# .. BAM + 16#A6#));
       Walk_Directory (Visit'Unrestricted_Access);
       for T in 1 .. 35 loop
          if T /= 18 then
-            Free_Blocks := Free_Blocks + Natural (Image (BAM + 4 * T));
+            Free_Blocks := Free_Blocks + Natural (Disk (BAM + 4 * T));
          end if;
       end loop;
       return Finish_Listing (L, Free_Blocks);
@@ -605,9 +754,17 @@ package body Media is
    begin
       Found := False;
       Data := null;
+      Unreliable := False;
       case Image_Kind is
          when G64 =>
-            null;   --  raw GCR: only readable through the emulated 1541
+            if Disk = null then
+               null;
+            elsif Is_Dir then
+               Data := D64_Directory;
+               Found := True;
+            else
+               D64_Find (Pattern, Data, Found);
+            end if;
          when None =>
             if Is_Dir then
                Data := Host_Directory;
@@ -720,7 +877,7 @@ package body Media is
          Off : constant Integer := Sector_Offset (Track, Sector);
       begin
          if (File_Type and 7) = 2 and then Off >= 0
-           and then Image (Off + 2) = 16#01# and then Image (Off + 3) = 16#08#
+           and then Disk (Off + 2) = 16#01# and then Disk (Off + 3) = 16#08#
          then
             for B of Name loop
                Append (Result,
@@ -732,7 +889,7 @@ package body Media is
          end if;
       end Visit;
    begin
-      if Image_Kind /= D64 then
+      if Image_Kind not in D64 | G64 or else Disk = null then
          return "";
       end if;
       Walk_Directory (Visit'Unrestricted_Access);

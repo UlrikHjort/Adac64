@@ -985,11 +985,22 @@ package body Machine is
          if Media.Kind not in Media.T64 | Media.PRG then
             return;    --  real tape routine
          end if;
-      elsif Dev /= 8 or else Drive_On then
+      elsif Dev /= 8 or else (Drive_On and then not Fast_Kernal_Load) then
          return;
       end if;
 
       Media.Find_File (Read_Name, Data, Found);
+      if Drive_On and then
+        (not Found or else Media.Last_Lookup_Unreliable
+         or else Data = null or else Data'Length < 2)
+      then
+         --  Let the emulated 1541 handle it (error message, protection,
+         --  sectors that do not decode cleanly).
+         if Data /= null then
+            Free (Data);
+         end if;
+         return;
+      end if;
       if not Found or else Data = null or else Data'Length < 2 then
          if Data /= null then
             Free (Data);

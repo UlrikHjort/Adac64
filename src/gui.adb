@@ -63,6 +63,7 @@ package body GUI is
    Item_4080    : Gtk_Check_Menu_Item;
    Item_Pause   : Gtk_Check_Menu_Item;
    Item_TDE     : Gtk_Check_Menu_Item;
+   Item_FastLd  : Gtk_Check_Menu_Item;
    Item_C64, Item_C128 : Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
    Was_VDC : Boolean := False;
@@ -134,6 +135,7 @@ package body GUI is
       Item_4080.Set_Active (Machine.Key_4080_Down);
       Item_Pause.Set_Active (Paused);
       Item_TDE.Set_Active (Machine.True_Drive);
+      Item_FastLd.Set_Active (Machine.Fast_Kernal_Load);
       Item_TDE.Set_Sensitive (Machine.Drive_ROM_Found);
       if Machine.Model = C64 then
          Item_C64.Set_Active (True);
@@ -458,6 +460,14 @@ package body GUI is
          Update_Status;
       end if;
    end On_True_Drive;
+
+   procedure On_Fast_Load (Item : access Gtk_Check_Menu_Item_Record'Class)
+   is
+   begin
+      if not Updating_Menu then
+         Machine.Fast_Kernal_Load := Item.Get_Active;
+      end if;
+   end On_Fast_Load;
 
    procedure On_Mute (Item : access Gtk_Check_Menu_Item_Record'Class) is
    begin
@@ -838,8 +848,10 @@ package body GUI is
       Add_Item (M_File, "Insert _cartridge...", On_Attach_Cart'Access);
       Add_Item (M_File, "Remove cartridge", On_Detach_Cart'Access);
       Add_Separator (M_File);
-      Add_Check (M_File, "True 1541 drive emulation (D64)", Item_TDE,
+      Add_Check (M_File, "True 1541 drive emulation (D64/G64)", Item_TDE,
                  On_True_Drive'Access);
+      Add_Check (M_File, "Fast KERNAL loading (with true drive)",
+                 Item_FastLd, On_Fast_Load'Access);
       Add_Separator (M_File);
       Add_Item (M_File, "_Quit", On_Quit'Access);
 

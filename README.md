@@ -50,6 +50,14 @@ The ROMs are available from
 <https://www.zimmers.net/anonftp/pub/cbm/firmware/drives/new/1541/>;
 `dos1541.bin` is `1541-c000.325302-01.bin` followed by `1541-e000.901229-05.bin`.
 
+**Fast KERNAL loading** (on by default, File menu): with the true drive
+active, KERNAL `LOAD`s from drive 8 are served instantly from the image and
+written straight into RAM, like a fast-load cartridge, so "one-filer" cracks
+that load under the I/O area work. G64 images are decoded to sectors for
+this; a file touching a sector that does not decode cleanly falls back to the
+emulated 1541. Custom loaders, drive code and SAVE always use the real drive.
+`--no-fast-load` disables it.
+
 **Fast mode** (File menu toggle, `--fast-drive`, or no drive ROM): KERNAL
 `LOAD`/`SAVE` are trapped at `$FFD5`/`$FFD8` and served instantly from D64,
 T64 and PRG images. With no image attached, drive 8 is always the current host

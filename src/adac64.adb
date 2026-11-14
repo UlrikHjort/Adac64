@@ -6,6 +6,7 @@
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
+--    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --attach FILE      attach a disk image without autostarting
 --    --headless N       run N frames without GUI, then save screenshots
 --    --png FILE         screenshot file for headless mode (default shot.png)
@@ -116,6 +117,8 @@ begin
          elsif A = "--dump" and then I < Argument_Count then
             I := I + 1;
             Dump := To_Unbounded_String (Argument (I));
+         elsif A = "--no-fast-load" then
+            Machine.Fast_Kernal_Load := False;
          elsif A = "--fast-drive" then
             Machine.True_Drive := False;
          elsif A = "--wav" and then I < Argument_Count then
