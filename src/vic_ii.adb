@@ -343,6 +343,15 @@ package body VIC_II is
    --  Timing
    ---------------------------------------------------------------------
 
+   procedure Fetch_Matrix is
+      VM_Base : constant Word := Word (Shift_Right (Regs (16#18#), 4)) * 1024;
+   begin
+      for I in 0 .. 39 loop
+         VM_Buf (I) := Mem_Read (VM_Base + Word ((VC + I) mod 1024));
+         Col_Buf (I) := Color_Read ((VC + I) mod 1024) and 15;
+      end loop;
+   end Fetch_Matrix;
+
    procedure Check_Bad_Line is
       D011 : constant Byte := Regs (16#11#);
    begin
@@ -360,15 +369,7 @@ package body VIC_II is
          if not Fast_Mode then
             Stall_Cycles := Stall_Cycles + 40;
          end if;
-         declare
-            VM_Base : constant Word :=
-              Word (Shift_Right (Regs (16#18#), 4)) * 1024;
-         begin
-            for I in 0 .. 39 loop
-               VM_Buf (I) := Mem_Read (VM_Base + Word ((VC + I) mod 1024));
-               Col_Buf (I) := Color_Read ((VC + I) mod 1024) and 15;
-            end loop;
-         end;
+         Fetch_Matrix;
       end if;
    end Check_Bad_Line;
 
@@ -567,6 +568,10 @@ package body VIC_II is
                   Bad_Line := True;
                   Display_State := True;
                   RC := 0;
+                  Fetch_Matrix;
+                  if not Fast_Mode then
+                     Stall_Cycles := Stall_Cycles + (54 - Line_Cycle);
+                  end if;
                end if;
             end if;
       end case;

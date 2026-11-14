@@ -7,6 +7,7 @@
 --    --headless N       run N frames without GUI, then save screenshots
 --    --png FILE         screenshot file for headless mode (default shot.png)
 --    --type TEXT        type TEXT after boot (use \n for RETURN)
+--    --wav FILE         headless: record SID output to a WAV file
 
 with Ada.Command_Line; use Ada.Command_Line;
 with Ada.Text_IO; use Ada.Text_IO;
@@ -14,6 +15,8 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Machine;
 with Blit;
 with GUI;
+with SID;
+with Wav_Sink;
 
 procedure AdaC64 is
    Model    : Machine.Model_Type := Machine.C64;
@@ -22,6 +25,7 @@ procedure AdaC64 is
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
    File     : Unbounded_String;
    Text     : Unbounded_String;
+   Wav      : Unbounded_String;
    I        : Positive := 1;
    Ok       : Boolean;
 
@@ -58,6 +62,9 @@ begin
          elsif A = "--png" and then I < Argument_Count then
             I := I + 1;
             PNG := To_Unbounded_String (Argument (I));
+         elsif A = "--wav" and then I < Argument_Count then
+            I := I + 1;
+            Wav := To_Unbounded_String (Argument (I));
          elsif A = "--type" and then I < Argument_Count then
             I := I + 1;
             Text := To_Unbounded_String (Unescape (Argument (I)));
@@ -73,6 +80,9 @@ begin
       return;
    end if;
 
+   if Length (Wav) > 0 then
+      SID.Sink := Wav_Sink.Push'Access;
+   end if;
    Machine.Power_On (Model, To_String (ROM_Dir), Ok);
    if not Ok then
       Put_Line (Standard_Error, Machine.Error_Message);
@@ -102,6 +112,9 @@ begin
              Machine.Frame_Count'Image &
              " $01=" & Machine.Peek (1)'Image);
    Blit.Save_PNG (Blit.VIC_Screen, To_String (PNG));
+   if Length (Wav) > 0 then
+      Wav_Sink.Save (To_String (Wav));
+   end if;
    if Machine.VDC_Enabled then
       Blit.Save_PNG (Blit.VDC_Screen, "vdc_" & To_String (PNG));
    end if;

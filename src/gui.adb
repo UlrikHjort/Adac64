@@ -24,6 +24,11 @@ with Gtk.File_Chooser;
 with Gtk.File_Chooser_Dialog; use Gtk.File_Chooser_Dialog;
 with Gtk.File_Filter; use Gtk.File_Filter;
 with Gtk.Message_Dialog; use Gtk.Message_Dialog;
+with Gtk.Dnd;
+with Gtk.Selection_Data;
+with Gdk.Drag_Contexts;
+with Glib.Convert;
+with GNAT.Strings;
 with Cairo; use Cairo;
 with Cairo.Image_Surface;
 with Cairo.Pattern;
@@ -428,6 +433,32 @@ package body GUI is
       return False;
    end On_Focus_Out;
 
+   procedure On_Drop
+     (Self    : access Gtk_Widget_Record'Class;
+      Context : not null access Gdk.Drag_Contexts.Drag_Context_Record'Class;
+      X, Y    : Gint;
+      Data    : Gtk.Selection_Data.Gtk_Selection_Data;
+      Info    : Guint;
+      Time    : Guint)
+   is
+      pragma Unreferenced (Self, Context, X, Y, Info, Time);
+      use type GNAT.Strings.String_Access;
+      URIs : GNAT.Strings.String_List :=
+        Gtk.Selection_Data.Get_Uris (Data);
+   begin
+      if URIs'Length > 0 and then URIs (URIs'First) /= null then
+         declare
+            Path : constant String :=
+              Glib.Convert.Filename_From_URI (URIs (URIs'First).all, null);
+         begin
+            Do_Autostart (Path);
+         end;
+      end if;
+      for U of URIs loop
+         GNAT.Strings.Free (U);
+      end loop;
+   end On_Drop;
+
    procedure On_Destroy (Self : access Gtk_Widget_Record'Class) is
       pragma Unreferenced (Self);
    begin
@@ -636,6 +667,10 @@ package body GUI is
       Gtk_New (Area);
       Area.Set_Size_Request (384, 272);
       Area.On_Draw (On_Draw'Access);
+      Gtk.Dnd.Dest_Set (Area, Gtk.Dnd.Dest_Default_All,
+                        Actions => Gdk.Drag_Contexts.Action_Copy);
+      Gtk.Dnd.Dest_Add_Uri_Targets (Area);
+      Area.On_Drag_Data_Received (On_Drop'Access);
       VBox.Pack_Start (Area, Expand => True, Fill => True);
 
       Gtk_New (Status, "");
