@@ -8,6 +8,7 @@
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --list-joysticks   list host game controllers and exit
+--    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
 --    --attach FILE      attach a disk image without autostarting
 --    --headless N       run N frames without GUI, then save screenshots
@@ -34,6 +35,7 @@ with Monitor_Commands;
 with Keyboard;
 with Host_Joystick;
 with REU;
+with Drive1541;
 with SID;
 with Wav_Sink;
 
@@ -45,6 +47,7 @@ procedure AdaC64 is
    subtype Machine_Word is Types.Word;
    Model    : Machine.Model_Type := Machine.C64;
    Model_Given, Key80_Given, REU_Given : Boolean := False;
+   Drive_Kind : Unbounded_String;
    ROM_Dir  : Unbounded_String := To_Unbounded_String ("/usr/share/vice");
    Headless : Natural := 0;
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
@@ -124,6 +127,9 @@ begin
                Host_Joystick.Close;
             end loop;
             return;
+         elsif A = "--drive" and then I < Argument_Count then
+            I := I + 1;
+            Drive_Kind := To_Unbounded_String (Argument (I));
          elsif A = "--reu" and then I < Argument_Count then
             I := I + 1;
             REU.Set_Size (REU.Size_KB'Value (Argument (I)));
@@ -180,6 +186,7 @@ begin
    end loop;
 
    if Headless = 0 then
+      GUI.Drive_Choice := Drive_Kind;
       GUI.Run (Model, To_String (ROM_Dir), To_String (File),
                Model_Given, Key80_Given, REU_Given);
       return;
@@ -193,6 +200,9 @@ begin
       Put_Line (Standard_Error, Machine.Error_Message);
       Set_Exit_Status (Failure);
       return;
+   end if;
+   if To_String (Drive_Kind) = "1571" then
+      Machine.Set_Drive_Type (Drive1541.D1571);
    end if;
    if Length (Attach) > 0 then
       Machine.Attach (To_String (Attach), Ok);

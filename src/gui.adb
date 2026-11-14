@@ -44,6 +44,8 @@ with SID;
 with Blit;
 with Monitor;
 with Settings;
+with Drive1541;
+use type Drive1541.Drive_Model;
 with REU;
 use type REU.Size_KB;
 use type Keyboard.Joy_Keyset;
@@ -116,7 +118,8 @@ package body GUI is
    procedure Update_Status is
       Drive_Str : constant String :=
         (if Machine.Drive_Active then
-            "1541 " & (if Machine.Drive_LED then "[*]" else "[ ]") &
+            (if Machine.Drive_Type = Drive1541.D1571 then "1571 "
+             else "1541 ") & (if Machine.Drive_LED then "[*]" else "[ ]") &
             " T" & Ada.Strings.Fixed.Trim (Machine.Drive_Track'Image,
                                            Ada.Strings.Left) & " "
          else "fast ");
@@ -508,8 +511,33 @@ package body GUI is
       end loop;
    end On_REU;
 
+   Item_1541, Item_1571 : Gtk_Radio_Menu_Item;
+
+   procedure On_Drive_Type (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      if Gtk_Radio_Menu_Item (Item) = Item_1571 then
+         if not Drive1541.Has_ROM (Drive1541.D1571) then
+            Message ("No 1571 ROM found (roms/drives/1571-rom.310654-05.bin" &
+                     " or <roms>/DRIVES/dos1571).");
+            Updating_Menu := True;
+            Item_1541.Set_Active (True);
+            Updating_Menu := False;
+            return;
+         end if;
+         Machine.Set_Drive_Type (Drive1541.D1571);
+      else
+         Machine.Set_Drive_Type (Drive1541.D1541);
+      end if;
+      Update_Status;
+   end On_Drive_Type;
+
    procedure Save_Settings is
    begin
+      Settings.Set ("drive", (if Machine.Drive_Type = Drive1541.D1571
+                              then "1571" else "1541"));
       Settings.Set ("reu", Integer (REU.Size));
       Settings.Set ("model", (if Machine.Model = C128 then "c128" else "c64"));
       Settings.Set ("key4080", Machine.Key_4080_Down);
@@ -1033,7 +1061,8 @@ package body GUI is
       M_File, M_Machine, M_Input, M_View, M_Help : Gtk_Menu;
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
-      Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group :
+      Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
+      Drive_Group :
         Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -1084,8 +1113,12 @@ package body GUI is
       Add_Item (M_File, "Insert _cartridge...", On_Attach_Cart'Access);
       Add_Item (M_File, "Remove cartridge", On_Detach_Cart'Access);
       Add_Separator (M_File);
-      Add_Check (M_File, "True 1541 drive emulation (D64/G64)", Item_TDE,
+      Add_Check (M_File, "True drive emulation (D64/D71/G64)", Item_TDE,
                  On_True_Drive'Access);
+      Add_Radio (M_File, "Drive 8 is a 1541", Drive_Group, Item_1541,
+                 On_Drive_Type'Access);
+      Add_Radio (M_File, "Drive 8 is a 1571 (C128 burst mode)", Drive_Group,
+                 Item_1571, On_Drive_Type'Access);
       Add_Check (M_File, "Fast KERNAL loading (with true drive)",
                  Item_FastLd, On_Fast_Load'Access);
       Add_Separator (M_File);
@@ -1233,6 +1266,22 @@ package body GUI is
       Updating_Menu := False;
 
       Start_Machine (Start_Model);
+      declare
+         Want : constant String :=
+           (if Length (Drive_Choice) > 0 then To_String (Drive_Choice)
+            else Settings.Get ("drive", "1541"));
+      begin
+         if Want = "1571" and then Drive1541.Has_ROM (Drive1541.D1571) then
+            Machine.Set_Drive_Type (Drive1541.D1571);
+         end if;
+         Updating_Menu := True;
+         if Machine.Drive_Type = Drive1541.D1571 then
+            Item_1571.Set_Active (True);
+         else
+            Item_1541.Set_Active (True);
+         end if;
+         Updating_Menu := False;
+      end;
       if File /= "" then
          Do_Autostart (File);
       end if;

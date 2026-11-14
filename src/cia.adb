@@ -14,6 +14,15 @@ package body CIA is
       end if;
    end Update_IRQ;
 
+   procedure Set_SDR (C : in out Chip; Value : Byte) is
+   begin
+      if (C.CRA and 16#40#) = 0 then
+         C.SDR := Value;
+         C.ICR_Flags := C.ICR_Flags or 16#08#;
+         Update_IRQ (C);
+      end if;
+   end Set_SDR;
+
    procedure Set_Flag (C : in out Chip; Bit : Byte) is
    begin
       C.ICR_Flags := C.ICR_Flags or Bit;

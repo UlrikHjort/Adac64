@@ -196,6 +196,9 @@ package body Media is
         and then Data (2) = Character'Pos ('R')
       then
          Image_Kind := G64;
+      elsif Ends_With (Path, ".d71") or else Data'Length in 349_696 | 351_062
+      then
+         Image_Kind := D71;
       elsif Ends_With (Path, ".d64") or else Data'Length in 174_848 | 175_531
         | 196_608 | 197_376
       then
@@ -210,7 +213,7 @@ package body Media is
       end if;
       Good := (others => True);
       Disk := null;
-      if Image_Kind = D64 then
+      if Image_Kind in D64 | D71 then
          Disk := Image;
       elsif Image_Kind = G64 then
          Decode_G64;
@@ -251,7 +254,7 @@ package body Media is
       use Ada.Streams.Stream_IO;
       F : File_Type;
    begin
-      if Image = null or else Image_Kind not in D64 | G64
+      if Image = null or else Image_Kind not in D64 | D71 | G64
         or else not Writable
       then
          return;
@@ -446,6 +449,13 @@ package body Media is
    function Sector_Offset (Track, Sector : Natural) return Integer is
       Off : Natural := 0;
    begin
+      if Image_Kind = D71 and then Track in 36 .. 70 then
+         declare
+            O : constant Integer := Sector_Offset (Track - 35, Sector);
+         begin
+            return (if O < 0 then -1 else 683 * 256 + O);
+         end;
+      end if;
       if Track < 1 or else Track > 40 or else Sector >= Sectors_On (Track)
       then
          return -1;
@@ -563,6 +573,14 @@ package body Media is
             Free_Blocks := Free_Blocks + Natural (Disk (BAM + 4 * T));
          end if;
       end loop;
+      if Image_Kind = D71 then
+         --  Free counts of side 2 (tracks 36..70) at $DD..$FF of 18/0
+         for T in 36 .. 70 loop
+            if T /= 53 then
+               Free_Blocks := Free_Blocks + Natural (Disk (BAM + 16#DD# + T - 36));
+            end if;
+         end loop;
+      end if;
       return Finish_Listing (L, Free_Blocks);
    end D64_Directory;
 
@@ -756,7 +774,7 @@ package body Media is
       Data := null;
       Unreliable := False;
       case Image_Kind is
-         when G64 =>
+         when G64 | D71 =>
             if Disk = null then
                null;
             elsif Is_Dir then
@@ -891,7 +909,7 @@ package body Media is
          end if;
       end Visit;
    begin
-      if Image_Kind not in D64 | G64 or else Disk = null then
+      if Image_Kind not in D64 | D71 | G64 or else Disk = null then
          return "";
       end if;
       Walk_Directory (Visit'Unrestricted_Access);
@@ -901,7 +919,7 @@ package body Media is
    end Start_Program_Name;
 
    function Has_Boot_Sector return Boolean is
-     (Image_Kind in D64 | G64 and then Disk /= null
+     (Image_Kind in D64 | D71 | G64 and then Disk /= null
       and then Disk'Length > 3
       and then Disk (0) = Character'Pos ('C')
       and then Disk (1) = Character'Pos ('B')
@@ -928,7 +946,7 @@ package body Media is
          end if;
       end Visit;
    begin
-      if Image_Kind not in D64 | G64 or else Disk = null then
+      if Image_Kind not in D64 | D71 | G64 or else Disk = null then
          return "*";
       end if;
       Walk_Directory (Visit'Unrestricted_Access);

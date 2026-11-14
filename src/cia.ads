@@ -57,6 +57,9 @@ package CIA is
    procedure Set_Flag (C : in out Chip; Bit : Byte);
    --  Raise an interrupt source (e.g. FLAG pin).
 
+   procedure Set_SDR (C : in out Chip; Value : Byte);
+   --  A byte shifted in from the serial port (only in input mode).
+
    function Port_A_Out (C : Chip) return Byte;
    function Port_B_Out (C : Chip) return Byte;
    --  Port output values; input bits read as 1 (pulled up).

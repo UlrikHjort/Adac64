@@ -59,6 +59,14 @@ The ROMs are available from
 <https://www.zimmers.net/anonftp/pub/cbm/firmware/drives/new/1541/>;
 `dos1541.bin` is `1541-c000.325302-01.bin` followed by `1541-e000.901229-05.bin`.
 
+**1571** (File menu or `--drive 1571`; needs `1571-rom.310654-05.bin` from
+<https://www.zimmers.net/anonftp/pub/cbm/firmware/drives/new/1571/> in
+`roms/drives/`): the C128's drive with its 32 KB DOS, 1/2 MHz CPU clock,
+double-sided head (D71 images, 1328 blocks), a WD1770 (no MFM disks) and
+its CIA for the C128 fast serial / burst mode, which the C128 KERNAL and CP/M
+use automatically (several times faster than a 1541; CP/M boots in ~40 s at
+real speed). On a C64 it behaves like a 1541.
+
 **Fast KERNAL loading** (on by default, File menu): with the true drive
 active, KERNAL `LOAD`s from drive 8 are served instantly from the image and
 written straight into RAM, like a fast-load cartridge, so "one-filer" cracks
@@ -153,10 +161,11 @@ Disk images can also be dropped onto the window.
     src/crt.*        CRT cartridge files
     src/reu.*        RAM Expansion Unit
     src/media.*      D64/T64/PRG images, fast-load traps, host directory
-    src/drive1541.*  1541 drive: CPU, memory map, GCR disk surface
+    src/drive1541.*  1541/1571 drive: CPU, VIAs, CIA, WD1770, GCR surface
     src/via.*        6522 VIA       src/iec.ads    serial bus lines
     src/keyboard.*   matrix and host key mapping
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
     tests/           CPU and keyboard tests, mkd64.py image builder
-    tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers
+    tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
+                     mkd71.py double-sided image builder

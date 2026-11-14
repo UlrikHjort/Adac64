@@ -3,6 +3,7 @@
 
 with Ada.Strings.Unbounded;
 with Types; use Types;
+with Drive1541;
 
 package Machine is
 
@@ -62,6 +63,8 @@ package Machine is
    function Cartridge_Name return String;   --  "" when none
    procedure Detach;
    procedure Set_True_Drive (On : Boolean);
+   procedure Set_Drive_Type (M : Drive1541.Drive_Model);
+   function Drive_Type return Drive1541.Drive_Model;
    function Drive_Active return Boolean;
    function Z80_Used return Boolean;
    --  True when the C128's Z80 took over after boot (e.g. CP/M runs).   --  1541 emulated on the bus now

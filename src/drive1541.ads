@@ -9,8 +9,20 @@ with Types; use Types;
 
 package Drive1541 is
 
+   type Drive_Model is (D1541, D1571);
+
    procedure Load_ROM (Path : String; Ok : out Boolean);
-   function ROM_Loaded return Boolean;
+   --  16 KB = 1541 DOS, 32 KB = 1571 DOS.
+   function ROM_Loaded return Boolean;            --  for the current model
+   function Has_ROM (M : Drive_Model) return Boolean;
+
+   procedure Set_Model (M : Drive_Model);
+   function Model return Drive_Model;
+
+   --  1571 fast serial (burst) link with the C128 (byte level)
+   procedure Fast_Byte_From_Host (Value : Byte);
+   type Fast_Proc is access procedure (Value : Byte);
+   To_Host : Fast_Proc := null;
 
    procedure Reset;
    --  Power-on reset of the drive (time base restarts at 0).

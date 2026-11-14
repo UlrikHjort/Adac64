@@ -17,6 +17,7 @@ with REU;
 use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
+use type Drive1541.Drive_Model;
 with IEC;
 with Ada.Directories;
 with Ada.Command_Line;
@@ -107,7 +108,8 @@ package body Machine is
    NMI_Prev : Boolean := False;
    Half_Cycle : Natural := 0;
    Frames : Natural := 0;
-   Total_Cycles : Long_Long_Integer := 0;   --  1 MHz device time
+   Total_Cycles : Long_Long_Integer := 0;
+   Fast_In_Count, Fast_Out_Count : Natural := 0;   --  fast serial bytes   --  1 MHz device time
    Drive_On : Boolean := False;             --  true drive participating
    TOD_Div : Natural := 0;
 
@@ -676,6 +678,16 @@ package body Machine is
               Value and 16#0F#;
          when 16#DC00# .. 16#DCFF# =>
             CIA.Write (CIA1, Off, Value);
+            --  C128 fast serial: a byte shifted out (FSDIR = output) goes
+            --  to a 1571
+            if Off mod 16 = 12 and then Current_Model = C128
+              and then not C64_Mode and then (MMU_MCR and 8) /= 0
+              and then Drive_On
+            then
+               Sync_Drive (Write_Delay => 1);
+               Fast_Out_Count := Fast_Out_Count + 1;
+               Drive1541.Fast_Byte_From_Host (Value);
+            end if;
          when 16#DD00# .. 16#DDFF# =>
             if Off mod 16 = 0 or else Off mod 16 = 2 then
                Sync_Drive (Write_Delay => 1);
@@ -846,7 +858,7 @@ package body Machine is
    procedure Update_Drive_State is
       Want : constant Boolean :=
         True_Drive and then Drive1541.ROM_Loaded
-        and then Media.Kind in Media.D64 | Media.G64;
+        and then Media.Kind in Media.D64 | Media.D71 | Media.G64;
    begin
       if Want and then not Drive_On then
          Drive1541.Reset;
@@ -871,17 +883,24 @@ package body Machine is
          when others => null;
       end Try;
    begin
-      if Drive1541.ROM_Loaded then
-         return;
-      end if;
       if Length (Drive_ROM_Path) > 0 then
          Try (To_String (Drive_ROM_Path));
+         Ok := False;
       end if;
-      Try (ROM_Dir & "/DRIVES/dos1541-325302-01+901229-05.bin");
-      Try (ROM_Dir & "/DRIVES/dos1541");
-      Try (Exe_Dir & "/../roms/drives/dos1541.bin");
-      Try ("roms/drives/dos1541.bin");
-      Try (Exe_Dir & "/../roms/drives/1541-II.251968-03.bin");
+      if not Drive1541.Has_ROM (Drive1541.D1541) then
+         Try (ROM_Dir & "/DRIVES/dos1541-325302-01+901229-05.bin");
+         Try (ROM_Dir & "/DRIVES/dos1541");
+         Try (Exe_Dir & "/../roms/drives/dos1541.bin");
+         Try ("roms/drives/dos1541.bin");
+         Try (Exe_Dir & "/../roms/drives/1541-II.251968-03.bin");
+      end if;
+      Ok := False;
+      if not Drive1541.Has_ROM (Drive1541.D1571) then
+         Try (ROM_Dir & "/DRIVES/dos1571-310654-05.bin");
+         Try (ROM_Dir & "/DRIVES/dos1571");
+         Try (Exe_Dir & "/../roms/drives/1571-rom.310654-05.bin");
+         Try ("roms/drives/1571-rom.310654-05.bin");
+      end if;
    exception
       when others => null;
    end Find_Drive_ROM;
@@ -890,7 +909,7 @@ package body Machine is
    begin
       Drive1541.Eject_Disk;
       Media.Attach (Path, Ok);
-      if Ok and then Media.Kind in Media.D64 | Media.G64 then
+      if Ok and then Media.Kind in Media.D64 | Media.D71 | Media.G64 then
          Drive1541.Insert_Disk;
       end if;
       Update_Drive_State;
@@ -936,6 +955,31 @@ package body Machine is
       Update_Drive_State;
    end Detach;
 
+   procedure Fast_Byte_To_Host (Value : Byte) is
+   begin
+      Fast_In_Count := Fast_In_Count + 1;
+      if Current_Model = C128 and then not C64_Mode
+        and then (MMU_MCR and 8) = 0
+      then
+         CIA.Set_SDR (CIA1, Value);
+      end if;
+   end Fast_Byte_To_Host;
+
+   procedure Set_Drive_Type (M : Drive1541.Drive_Model) is
+   begin
+      if M /= Drive1541.Model then
+         Drive1541.Eject_Disk;
+         Drive1541.Set_Model (M);
+         if Media.Kind in Media.D64 | Media.D71 | Media.G64 then
+            Drive1541.Insert_Disk;
+         end if;
+         Drive_On := False;
+         Update_Drive_State;
+      end if;
+   end Set_Drive_Type;
+
+   function Drive_Type return Drive1541.Drive_Model is (Drive1541.Model);
+
    procedure Set_True_Drive (On : Boolean) is
    begin
       True_Drive := On;
@@ -957,7 +1001,8 @@ package body Machine is
      ("nmi=" & NMI_Count'Image & " (last from" & Last_NMI_PC'Image & ")" &
       " irq=" & IRQ_Count'Image & " jam=" & CPU.Jammed'Image &
       " drivePC=" & Drive1541.Get_PC'Image &
-      " cia2 mask=" & CIA2.ICR_Mask'Image & " flags=" & CIA2.ICR_Flags'Image);
+      " cia2 mask=" & CIA2.ICR_Mask'Image & " flags=" & CIA2.ICR_Flags'Image &
+      " fast serial in/out=" & Fast_In_Count'Image & Fast_Out_Count'Image);
 
    function Drive_Peek (Addr : Natural) return Byte is
      (Drive1541.Peek_RAM (Addr));
@@ -969,6 +1014,7 @@ package body Machine is
 
    procedure Power_On (M : Model_Type; ROM_Dir : String; Ok : out Boolean) is
    begin
+      Drive1541.To_Host := Fast_Byte_To_Host'Access;
       REU.Bus_Read := Bus_Read'Access;
       REU.Bus_Write := Bus_Write'Access;
       Find_Drive_ROM (ROM_Dir);
