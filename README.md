@@ -15,7 +15,9 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
 Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 (insert without autostart), and for testing `--headless N` (run N frames, save
 `shot.png` / `vdc_shot.png`), `--png FILE`, `--type "TEXT\n"`, `--wav FILE`,
-`--dump FILE` (64 KB memory + 2 KB drive RAM), `--type-at FRAME TEXT`.
+`--dump FILE` (64 KB memory + 2 KB drive RAM), `--type-at FRAME TEXT`,
+`--save-snapshot F`, `--load-snapshot F`, `--break ADDR` and
+`--monitor "r;d e5cd;m 0400"` (monitor commands after the run).
 
 ## What is emulated
 
@@ -68,6 +70,18 @@ its disk surface, cartridge) to a file; Shift+F9 / Shift+F10 quick-save and
 quick-load `~/.local/share/adac64/quick.a64s`. The attached disk image is
 re-attached by path when loading.
 
+### Monitor
+
+Machine → Monitor (Shift+F12) opens a machine-code monitor, which also pops
+up when a breakpoint is hit. Numbers are hex (`$` optional):
+
+    r            registers           z [n]       step n instructions
+    d [addr]     disassemble         m [a [b]]   memory dump
+    > addr bb..  write bytes         g [addr]    continue (optionally at addr)
+    b addr       set breakpoint      bd [addr]   delete one / all breakpoints
+    bl           list breakpoints    dev c | 8   view C64 or 1541 CPU
+    x            close and continue
+
 ## Keys
 
 Keyboard mapping is symbolic: type the character you want.
@@ -78,7 +92,7 @@ Joystick (port 2 by default, changeable in the Input menu): keypad 8/2/4/6 with
 diagonals, fire = keypad 0/5/Enter or Right Ctrl; alternatively the cursor keys.
 
 F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 reset,
-Shift+F9 quick save, Shift+F10 quick load.
+Shift+F9 quick save, Shift+F10 quick load, Shift+F12 monitor.
 Disk images can also be dropped onto the window.
 
 ## Source layout
@@ -93,5 +107,6 @@ Disk images can also be dropped onto the window.
     src/via.*        6522 VIA       src/iec.ads    serial bus lines
     src/keyboard.*   matrix and host key mapping
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
+    src/monitor*.*   machine-code monitor src/disasm.* disassembler
     tests/           CPU and keyboard tests, mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers

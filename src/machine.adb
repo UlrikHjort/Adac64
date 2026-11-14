@@ -10,6 +10,7 @@ with SID;
 with VDC;
 with Keyboard;
 with Media;
+with Disasm;
 with CRT;
 use type CRT.Cart_Type;
 with Drive1541;
@@ -1358,59 +1359,140 @@ package body Machine is
       end if;
    end Clock_Devices;
 
-   procedure Run_Frame is
-      N : Natural;
-      Dev : Natural;
-      NMI_Now : Boolean;
+   ---------------------------------------------------------------------
+   --  Debugger support
+   ---------------------------------------------------------------------
+
+   Max_Breakpoints : constant := 16;
+   Breakpoints : array (1 .. Max_Breakpoints) of Word := (others => 0);
+   BP_Count    : Natural := 0;
+   Break_Flag  : Boolean := False;
+   Skip_Break  : Boolean := False;   --  do not re-trigger at resume point
+
+   procedure Set_Breakpoint (Addr : Word) is
    begin
-      VIC.Frame_Done := False;
-      while not VIC.Frame_Done loop
-         if VIC.Stall_Cycles > 0 then
-            N := VIC.Stall_Cycles;
-            VIC.Stall_Cycles := 0;
-            Clock_Devices (N);
-         else
-            if Kernal_High then
-               if CPU.PC = 16#FFD5# then
-                  Trap_Load;
-               elsif CPU.PC = 16#FFD8# then
-                  Trap_Save;
-               end if;
-            end if;
-
-            CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ;
-            NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
-            if NMI_Now and then not NMI_Prev then
-               CPU.NMI_Pending := True;
-               NMI_Count := NMI_Count + 1;
-               Last_NMI_PC := CPU.PC;
-            end if;
-            if CPU.IRQ_Line and then not CPU.Flag_I then
-               IRQ_Count := IRQ_Count + 1;
-            end if;
-            NMI_Prev := NMI_Now;
-
-            Instr_Ticked := 0;
-            In_Step := True;
-            CPU.Step (N);
-            In_Step := False;
-
-            if VIC.Fast_Mode and then not C64_Mode then
-               Dev := (N + Half_Cycle) / 2;
-               Half_Cycle := (N + Half_Cycle) mod 2;
-            else
-               Dev := (if N > Instr_Ticked then N - Instr_Ticked else 0);
-            end if;
-            Instr_Ticked := 0;
-            if Dev > 0 then
-               Clock_Devices (Dev);
-            end if;
-         end if;
-         if Drive_On then
-            Drive1541.Run_Until (Total_Cycles);
+      for I in 1 .. BP_Count loop
+         if Breakpoints (I) = Addr then
+            return;
          end if;
       end loop;
+      if BP_Count < Max_Breakpoints then
+         BP_Count := BP_Count + 1;
+         Breakpoints (BP_Count) := Addr;
+      end if;
+   end Set_Breakpoint;
 
+   procedure Clear_Breakpoint (Addr : Word) is
+   begin
+      for I in 1 .. BP_Count loop
+         if Breakpoints (I) = Addr then
+            Breakpoints (I) := Breakpoints (BP_Count);
+            BP_Count := BP_Count - 1;
+            return;
+         end if;
+      end loop;
+   end Clear_Breakpoint;
+
+   procedure Clear_Breakpoints is
+   begin
+      BP_Count := 0;
+   end Clear_Breakpoints;
+
+   function Breakpoint_List return String is
+      R : Unbounded_String;
+   begin
+      for I in 1 .. BP_Count loop
+         Append (R, " $" & Disasm.Hex4 (Breakpoints (I)));
+      end loop;
+      return (if BP_Count = 0 then " (none)" else To_String (R));
+   end Breakpoint_List;
+
+   function Break_Hit return Boolean is (Break_Flag);
+
+   procedure Resume is
+   begin
+      Break_Flag := False;
+      Skip_Break := True;
+   end Resume;
+
+   function At_Breakpoint return Boolean is
+   begin
+      for I in 1 .. BP_Count loop
+         if Breakpoints (I) = CPU.PC then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end At_Breakpoint;
+
+   function Monitor_Peek (Addr : Word; Drive : Boolean := False) return Byte
+   is
+   begin
+      if Drive then
+         return Drive1541.Peek (Addr);
+      end if;
+      if Addr >= 2 and then Read_Map (Hi (Addr)) = IO_Page then
+         case Addr is
+            when 16#D000# .. 16#D3FF# =>
+               return (if (Addr and 16#3F#) in 16#1E# | 16#1F# then 0
+                       else VIC.Read (Natural (Addr and 16#3F#)));
+            when 16#D800# .. 16#DBFF# =>
+               return Color_RAM (CPU_Color_Bank * 1024 +
+                                   Natural (Addr - 16#D800#)) or 16#F0#;
+            when 16#DC00# .. 16#DCFF# =>
+               return CIA.Peek (CIA1, Natural (Addr and 15));
+            when 16#DD00# .. 16#DDFF# =>
+               return CIA.Peek (CIA2, Natural (Addr and 15));
+            when others =>
+               return 16#FF#;
+         end case;
+      end if;
+      return Peek (Addr);
+   end Monitor_Peek;
+
+   procedure Monitor_Poke (Addr : Word; Value : Byte; Drive : Boolean := False)
+   is
+   begin
+      if Drive then
+         Drive1541.Poke (Addr, Value);
+      else
+         Bus_Write (Addr, Value);
+      end if;
+   end Monitor_Poke;
+
+   function Flags_Text (N, V, D, I, Z, C : Boolean) return String is
+     ((if N then 'N' else '.') & (if V then 'V' else '.') & "-B" &
+      (if D then 'D' else '.') & (if I then 'I' else '.') &
+      (if Z then 'Z' else '.') & (if C then 'C' else '.'));
+
+   function Register_Text (Drive : Boolean := False) return String is
+   begin
+      if Drive then
+         return Drive1541.Register_Text;
+      end if;
+      return "PC=$" & Disasm.Hex4 (CPU.PC) & " A=$" & Disasm.Hex2 (CPU.A) &
+        " X=$" & Disasm.Hex2 (CPU.X) & " Y=$" & Disasm.Hex2 (CPU.Y) &
+        " SP=$" & Disasm.Hex2 (CPU.SP) & " " &
+        Flags_Text (CPU.Flag_N, CPU.Flag_V, CPU.Flag_D, CPU.Flag_I,
+                    CPU.Flag_Z, CPU.Flag_C) &
+        "  raster" & VIC.Raster'Image & " cycle" & VIC.Line_Cycle'Image &
+        "  $01=$" & Disasm.Hex2 (Port_Read);
+   end Register_Text;
+
+   function CPU_PC (Drive : Boolean := False) return Word is
+     (if Drive then Drive1541.Get_PC else CPU.PC);
+
+   procedure Monitor_Set_PC (Addr : Word) is
+   begin
+      CPU.PC := Addr;
+   end Monitor_Set_PC;
+
+   ---------------------------------------------------------------------
+   --  Main loop
+   ---------------------------------------------------------------------
+
+   procedure End_Of_Frame is
+   begin
       --  50 Hz TOD input
       CIA.Tick_TOD (CIA1);
       CIA.Tick_TOD (CIA2);
@@ -1423,6 +1505,98 @@ package body Machine is
       Feed_Keyboard;
       Autostart_Step;
       Frames := Frames + 1;
+   end End_Of_Frame;
+
+   --  Advance the system by one CPU instruction (or one VIC stall period).
+   --  Returns True when a CPU instruction was executed.
+   function Step_System return Boolean is
+      N : Natural;
+      Dev : Natural;
+      NMI_Now : Boolean;
+      Executed : Boolean := False;
+   begin
+      if VIC.Stall_Cycles > 0 then
+         N := VIC.Stall_Cycles;
+         VIC.Stall_Cycles := 0;
+         Clock_Devices (N);
+      else
+         if Kernal_High then
+            if CPU.PC = 16#FFD5# then
+               Trap_Load;
+            elsif CPU.PC = 16#FFD8# then
+               Trap_Save;
+            end if;
+         end if;
+
+         CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ;
+         NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
+         if NMI_Now and then not NMI_Prev then
+            CPU.NMI_Pending := True;
+            NMI_Count := NMI_Count + 1;
+            Last_NMI_PC := CPU.PC;
+         end if;
+         if CPU.IRQ_Line and then not CPU.Flag_I then
+            IRQ_Count := IRQ_Count + 1;
+         end if;
+         NMI_Prev := NMI_Now;
+
+         Instr_Ticked := 0;
+         In_Step := True;
+         CPU.Step (N);
+         In_Step := False;
+         Executed := True;
+
+         if VIC.Fast_Mode and then not C64_Mode then
+            Dev := (N + Half_Cycle) / 2;
+            Half_Cycle := (N + Half_Cycle) mod 2;
+         else
+            Dev := (if N > Instr_Ticked then N - Instr_Ticked else 0);
+         end if;
+         Instr_Ticked := 0;
+         if Dev > 0 then
+            Clock_Devices (Dev);
+         end if;
+      end if;
+      if Drive_On then
+         Drive1541.Run_Until (Total_Cycles);
+      end if;
+      return Executed;
+   end Step_System;
+
+   procedure Run_Frame is
+   begin
+      if Break_Flag then
+         return;          --  stopped at a breakpoint until Resume
+      end if;
+      while not VIC.Frame_Done loop
+         if BP_Count > 0 and then VIC.Stall_Cycles = 0 then
+            if not Skip_Break and then At_Breakpoint then
+               Break_Flag := True;
+               return;
+            end if;
+            Skip_Break := False;
+         end if;
+         declare
+            Dummy : constant Boolean := Step_System;
+            pragma Unreferenced (Dummy);
+         begin
+            null;
+         end;
+      end loop;
+      VIC.Frame_Done := False;
+      End_Of_Frame;
    end Run_Frame;
+
+   procedure Step_Instruction is
+   begin
+      loop
+         exit when Step_System;
+      end loop;
+      if VIC.Frame_Done then
+         VIC.Frame_Done := False;
+         End_Of_Frame;
+      end if;
+      Skip_Break := True;
+   end Step_Instruction;
 
 end Machine;

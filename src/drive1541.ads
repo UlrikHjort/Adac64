@@ -38,6 +38,9 @@ package Drive1541 is
    --  Drive RAM (debugging).
 
    function Get_PC return Word;
+   function Peek (Addr : Word) return Byte;           --  no side effects
+   procedure Poke (Addr : Word; Value : Byte);        --  RAM only
+   function Register_Text return String;
 
    function LED_On return Boolean;
    function Motor_On return Boolean;

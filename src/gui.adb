@@ -42,6 +42,8 @@ with Media;
 with Audio;
 with SID;
 with Blit;
+with Monitor;
+with Disasm;
 
 package body GUI is
 
@@ -368,6 +370,23 @@ package body GUI is
       Snapshot_Load (Quick_Snapshot_Path);
    end On_Quick_Load;
 
+   procedure Refresh_Screen is
+   begin
+      if Show_VDC then
+         Blit.Copy (Blit.VDC_Screen, VDC_Surf);
+      else
+         Blit.Copy (Blit.VIC_Screen, VIC_Surf);
+      end if;
+      Area.Queue_Draw;
+   end Refresh_Screen;
+
+   procedure On_Monitor (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Keyboard.Release_All;
+      Monitor.Open (Win, "stopped");
+   end On_Monitor;
+
    procedure On_Quit (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
    begin
@@ -564,9 +583,14 @@ package body GUI is
          when 16#FFC8# =>    --  F11
             Warp := not Warp;
             Sync_Menu;
-         when 16#FFC9# =>    --  F12
-            Machine.Reset;
-            Sync_Menu;
+         when 16#FFC9# =>    --  F12 (Shift+F12: monitor)
+            if (Event.State and Gdk.Types.Shift_Mask) /= 0 then
+               Keyboard.Release_All;
+               Monitor.Open (Win, "stopped");
+            else
+               Machine.Reset;
+               Sync_Menu;
+            end if;
          when others =>
             Keyboard.Key_Event (KV, Natural (Event.Hardware_Keycode), True);
       end case;
@@ -633,7 +657,7 @@ package body GUI is
       Now : constant Time := Clock;
       Ran : Natural := 0;
    begin
-      if Paused then
+      if Paused or else Monitor.Active then
          return True;
       end if;
 
@@ -675,6 +699,14 @@ package body GUI is
                Frames_Run := Frames_Run + 1;
             end loop;
          end;
+      end if;
+
+      if Machine.Break_Hit and then not Monitor.Active then
+         Keyboard.Release_All;
+         Refresh_Screen;
+         Monitor.Open (Win, "breakpoint at $" &
+                         Disasm.Hex4 (Machine.CPU_PC));
+         return True;
       end if;
 
       if Ran > 0 then
@@ -821,6 +853,7 @@ package body GUI is
       Add_Separator (M_Machine);
       Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
       Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);
+      Add_Item (M_Machine, "Mo_nitor (Shift+F12)", On_Monitor'Access);
       Add_Item (M_Machine, "_Quick save (Shift+F9)", On_Quick_Save'Access);
       Add_Item (M_Machine, "Quick _load (Shift+F10)", On_Quick_Load'Access);
       Add_Separator (M_Machine);
@@ -875,6 +908,7 @@ package body GUI is
          Gint (Blit.Height (Blit.VDC_Screen)));
 
       SID.Sink := Audio.Push'Access;
+      Monitor.On_Change := Refresh_Screen'Access;
       Audio.Start;
 
       Updating_Menu := True;

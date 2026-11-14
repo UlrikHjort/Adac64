@@ -592,6 +592,42 @@ package body Drive1541 is
    function Peek_RAM (Addr : Natural) return Byte is (RAM (Addr mod 2048));
    function Get_PC return Word is (CPU.PC);
 
+   function Peek (Addr : Word) return Byte is
+   begin
+      case Addr is
+         when 16#0000# .. 16#17FF# => return RAM (Natural (Addr and 16#07FF#));
+         when 16#8000# .. 16#FFFF# => return ROM (Natural (Addr and 16#3FFF#));
+         when others => return 16#FF#;
+      end case;
+   end Peek;
+
+   procedure Poke (Addr : Word; Value : Byte) is
+   begin
+      if Addr < 16#1800# then
+         RAM (Natural (Addr and 16#07FF#)) := Value;
+      end if;
+   end Poke;
+
+   function Register_Text return String is
+      H : constant String := "0123456789ABCDEF";
+      function X2 (B : Byte) return String is
+        (H (Natural (B / 16) + 1) & H (Natural (B mod 16) + 1));
+      P : constant Byte := CPU.Get_P;
+      F : String (1 .. 8) := "NV-BDIZC";
+   begin
+      for I in 0 .. 7 loop
+         if (Shift_Right (P, 7 - I) and 1) = 0 and then I /= 2 then
+            F (I + 1) := '.';
+         end if;
+      end loop;
+      return "1541 PC=$" & X2 (Hi (CPU.PC)) & X2 (Lo (CPU.PC)) &
+        " A=$" & X2 (CPU.A) & " X=$" & X2 (CPU.X) & " Y=$" & X2 (CPU.Y) &
+        " SP=$" & X2 (CPU.SP) & " " & F &
+        "  track" & Natural'Image (Half_Track / 2) &
+        (if Half_Track mod 2 = 1 then ".5" else "") &
+        (if Motor_On then " motor" else "") & (if LED_On then " LED" else "");
+   end Register_Text;
+
    procedure Reset is
    begin
       RAM := (others => 0);

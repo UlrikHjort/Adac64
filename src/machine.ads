@@ -71,6 +71,20 @@ package Machine is
    --  Complete machine state (computer, drive, cartridge); call between
    --  frames.  The attached disk image is re-attached by path.
 
+   --  Debugger (machine-code monitor)
+   procedure Step_Instruction;            --  one C64 CPU instruction
+   procedure Set_Breakpoint (Addr : Word);
+   procedure Clear_Breakpoint (Addr : Word);
+   procedure Clear_Breakpoints;
+   function Breakpoint_List return String;
+   function Break_Hit return Boolean;     --  Run_Frame stopped at one
+   procedure Resume;                      --  continue after a break
+   function Register_Text (Drive : Boolean := False) return String;
+   function Monitor_Peek (Addr : Word; Drive : Boolean := False) return Byte;
+   procedure Monitor_Poke (Addr : Word; Value : Byte; Drive : Boolean := False);
+   function CPU_PC (Drive : Boolean := False) return Word;
+   procedure Monitor_Set_PC (Addr : Word);
+
    procedure Shutdown;
    --  Write back any modified disk tracks.
 
