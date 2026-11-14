@@ -218,6 +218,27 @@ and `bin/adac64 prog.bas` tokenizes and runs it. `tests/basic_test.sh`
 types the test programs into the emulated C64 and C128 and checks that the
 real ROM tokenizers produce exactly the same bytes.
 
+### Sprite editor
+
+Studio → Tools → Sprite editor (Ctrl+E), or open a `.spr` file. A set holds
+up to 256 sprites (strip at the bottom, PgUp/PgDn). Draw with the left
+button, erase with the right, Shift+click flood-fills; pens 1-4 are
+background, sprite colour, multicolour 1 and 2 (`$D025`/`$D026`), and a
+click in the palette gives the selected pen its colour. M toggles
+multicolour (double-wide pixels). Clear, invert, flip, shift (wrapping),
+copy/paste between sprites and undo (Ctrl+Z) are on the toolbar; the
+preview shows the sprite enlarged and at real size, with X/Y expansion,
+and can animate a range of sprites.
+
+*Show in emulator* puts the sprite on the real VIC-II as sprite 0 (data at
+`$0340`, at the READY prompt), *Live in emulator* does that on every change,
+and *Grab from emulator* copies all sprites that are switched on in the
+running program (any VIC bank) into the set, with their colours.
+
+`.spr` files are raw 64-byte blocks (63 bytes of data + colour/multicolour
+byte), so `!binary "ship.spr"` includes them directly; *Export .asm* writes
+ACME source with one `!byte %...###...` line per row and a label per sprite.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -262,8 +283,10 @@ Disk images can also be dropped onto the window.
     src/asm.*        6502 assembler (ACME syntax)
     src/basic.*      BASIC V2 / 7.0 tokenizer and lister
     src/studio.*     studio window    src/source_view.*  GtkSourceView binding
+    src/sprite_*     sprite editor (data model / window)
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
-    tests/           CPU, keyboard and debugger tests, mkd64.py image builder
+    tests/           CPU, keyboard, debugger, sprite and BASIC tests,
+                     mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py
                      KERNAL-format TAP encoder

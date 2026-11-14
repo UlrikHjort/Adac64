@@ -1207,6 +1207,8 @@ package body Machine is
       Mem (Natural (Addr)) := Value;
    end Poke;
 
+   function RAM_Peek (Addr : Word) return Byte is (Mem (Natural (Addr)));
+
    ---------------------------------------------------------------------
    --  KERNAL traps
    ---------------------------------------------------------------------
@@ -1981,6 +1983,24 @@ package body Machine is
       end loop;
       return False;
    end At_Breakpoint;
+
+   function IO_Peek (Addr : Word) return Byte is
+   begin
+      case Addr is
+         when 16#D000# .. 16#D3FF# =>
+            return (if (Addr and 16#3F#) in 16#1E# | 16#1F# then 0
+                    else VIC.Read (Natural (Addr and 16#3F#)));
+         when 16#D800# .. 16#DBFF# =>
+            return Color_RAM (CPU_Color_Bank * 1024 +
+                                Natural (Addr - 16#D800#)) or 16#F0#;
+         when 16#DC00# .. 16#DCFF# =>
+            return CIA.Peek (CIA1, Natural (Addr and 15));
+         when 16#DD00# .. 16#DDFF# =>
+            return CIA.Peek (CIA2, Natural (Addr and 15));
+         when others =>
+            return 16#FF#;
+      end case;
+   end IO_Peek;
 
    function Monitor_Peek (Addr : Word; Drive : Boolean := False) return Byte
    is

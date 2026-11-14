@@ -52,6 +52,7 @@ use type Basic.Dialect;
 with Disasm;
 with Settings;
 with Source_View;
+with Sprite_Editor;
 use type Source_View.Language;
 with Interfaces; use Interfaces;
 
@@ -365,7 +366,7 @@ package body Studio is
          for P of GNAT.Strings.String_List'
            (new String'("*.asm"), new String'("*.a"), new String'("*.s"),
             new String'("*.a65"), new String'("*.inc"), new String'("*.src"),
-            new String'("*.bas"))
+            new String'("*.bas"), new String'("*.spr"))
          loop
             Filter_Src.Add_Pattern (P.all);
          end loop;
@@ -936,7 +937,7 @@ package body Studio is
       A_Undo, A_Redo, A_Close,
       A_Build, A_Run, A_Rebuild_Run, A_Pause, A_Step_Into, A_Step_Over,
       A_Step_Out, A_Run_To_Cursor, A_Toggle_BP, A_Clear_BPs, A_Reset,
-      A_Emulator, A_Help);
+      A_Emulator, A_Sprites, A_Help);
 
    procedure Do_Action (A : Action) is
       T : constant Natural := Current_Tab;
@@ -985,7 +986,11 @@ package body Studio is
                P : constant String := Choose_File ("Open source", False);
             begin
                if P /= "" then
-                  Dummy := Open_Path (P) > 0;
+                  if Sprite_Editor.Is_Sprite_File (P) then
+                     Sprite_Editor.Open (Win, P);
+                  else
+                     Dummy := Open_Path (P) > 0;
+                  end if;
                end if;
             end;
          when A_Save =>
@@ -1094,6 +1099,8 @@ package body Studio is
             if Parent_W /= null then
                Parent_W.Present;
             end if;
+         when A_Sprites =>
+            Sprite_Editor.Open (Win);
          when A_Help =>
             Print ("F5 build & run / continue   Ctrl+F5 rebuild & run   " &
                    "F6 pause   F7 build");
@@ -1388,6 +1395,8 @@ package body Studio is
       Separator (M);
       Item (M, "_Reset machine", A_Reset);
       Item (M, "Show _emulator", A_Emulator, GDK_F12);
+      M := Menu ("_Tools");
+      Item (M, "_Sprite editor", A_Sprites, GDK_LC_e, Control_Mask);
       M := Menu ("_Help");
       Item (M, "_Keys and syntax", A_Help, GDK_F1);
 
@@ -1531,7 +1540,9 @@ package body Studio is
               (if Ada.Directories.Exists (File)
                then Ada.Directories.Full_Name (File) else File);
          begin
-            if Ada.Directories.Exists (Full) then
+            if Sprite_Editor.Is_Sprite_File (Full) then
+               Sprite_Editor.Open (Win, Full);
+            elsif Ada.Directories.Exists (Full) then
                Dummy := Open_Path (Full);
                Main_File := To_Unbounded_String (Full);
             else

@@ -151,7 +151,11 @@ begin
             GUI.Open_Studio := True;
             if I < Argument_Count and then
               (Asm.Is_Source (Argument (I + 1))
-               or else Basic.Is_Source (Argument (I + 1)))
+               or else Basic.Is_Source (Argument (I + 1))
+               or else (Argument (I + 1)'Length > 4
+                        and then Argument (I + 1)
+                          (Argument (I + 1)'Last - 3 .. Argument (I + 1)'Last)
+                          = ".spr"))
             then
                I := I + 1;
                GUI.Studio_File := To_Unbounded_String (Argument (I));

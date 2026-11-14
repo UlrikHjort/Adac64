@@ -41,6 +41,10 @@ package Machine is
    function Frame_Count return Natural;
    function Peek (Addr : Word) return Byte;     --  CPU view, no side effects
    procedure Poke (Addr : Word; Value : Byte);  --  RAM bank 0
+   function RAM_Peek (Addr : Word) return Byte; --  RAM bank 0 (under ROM/IO)
+   function IO_Peek (Addr : Word) return Byte;
+   --  VIC-II / colour RAM / CIA register at $D000-$DFFF, whatever is
+   --  banked in for the CPU (no side effects).
    function Get_PC return Word;
    function Screen_Contains (Text : String) return Boolean;
    --  True when Text (ASCII) is visible on the 40- or 80-column screen.
