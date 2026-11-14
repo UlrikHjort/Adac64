@@ -26,6 +26,15 @@ package Media is
    procedure Save_File (Name : Byte_Array; Data : Byte_Array; Ok : out Boolean);
    --  Save to the host directory (always, regardless of attached image).
 
+   function Image_Data return Byte_Array_Access;
+   --  The attached image itself (D64 sectors), for the true drive emulation.
+
+   function Image_Writable return Boolean;
+   --  False if the image file is read-only (drive reports write protect).
+
+   procedure Save_Image;
+   --  Write the (modified) attached image back to its file.
+
    function First_Load_Address return Word;
    --  Load address of the first file on the attached medium (0 if none).
 

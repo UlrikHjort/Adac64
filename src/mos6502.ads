@@ -26,6 +26,10 @@ package MOS6502 is
 
    Jammed : Boolean := False;        --  CPU executed a KIL/JAM opcode
 
+   Current_Cycles : Natural := 0;
+   --  Base cycle count of the instruction being executed (valid during
+   --  Step, so bus handlers can estimate when an access happens).
+
    procedure Reset;
    --  Load PC from the reset vector and initialise registers.
 

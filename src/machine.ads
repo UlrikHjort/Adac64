@@ -1,6 +1,7 @@
 --  The complete C64 / C128 system: memory map, I/O dispatch, CPU, chips,
 --  KERNAL load/save traps and the per-frame run loop.
 
+with Ada.Strings.Unbounded;
 with Types; use Types;
 
 package Machine is
@@ -39,5 +40,25 @@ package Machine is
 
    function VDC_Enabled return Boolean;
    --  True when the machine has a VDC (C128).
+
+   --  Disk drive 8
+   True_Drive : Boolean := True;
+   --  Use the emulated 1541 (needs a drive ROM) for D64 images; otherwise
+   --  the KERNAL LOAD/SAVE traps are used.
+
+   Drive_ROM_Path : Ada.Strings.Unbounded.Unbounded_String;
+   --  Optional explicit 1541 ROM file (16 KB).
+
+   procedure Attach (Path : String; Ok : out Boolean);
+   procedure Detach;
+   procedure Set_True_Drive (On : Boolean);
+   function Drive_Active return Boolean;   --  1541 emulated on the bus now
+   function Drive_ROM_Found return Boolean;
+   function Drive_LED return Boolean;
+   function Drive_Motor return Boolean;
+   function Drive_Track return Natural;
+
+   procedure Shutdown;
+   --  Write back any modified disk tracks.
 
 end Machine;

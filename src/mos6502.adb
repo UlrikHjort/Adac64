@@ -405,6 +405,7 @@ package body MOS6502 is
 
       Op := Fetch;
       M := Modes (Op);
+      Current_Cycles := Cycles_Base (Op);
 
       --  Effective address computation
       case M is

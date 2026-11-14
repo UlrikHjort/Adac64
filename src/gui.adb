@@ -57,6 +57,7 @@ package body GUI is
    Item_VDC     : Gtk_Check_Menu_Item;
    Item_4080    : Gtk_Check_Menu_Item;
    Item_Pause   : Gtk_Check_Menu_Item;
+   Item_TDE     : Gtk_Check_Menu_Item;
    Item_C64, Item_C128 : Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
 
@@ -64,6 +65,7 @@ package body GUI is
    Frames_Run   : Natural := 0;     --  for time-based pacing
    FPS_Time     : Time := Clock;
    FPS_Frames   : Natural := 0;
+   LED_Time     : Time := Clock;
    FPS          : Natural := 0;
 
    Audio_Target : constant := 2 * 882 + 441;    --  ~50 ms of samples
@@ -89,10 +91,16 @@ package body GUI is
                       else "C128"));
 
    procedure Update_Status is
+      Drive_Str : constant String :=
+        (if Machine.Drive_Active then
+            "1541 " & (if Machine.Drive_LED then "[*]" else "[ ]") &
+            " T" & Ada.Strings.Fixed.Trim (Machine.Drive_Track'Image,
+                                           Ada.Strings.Left) & " "
+         else "fast ");
       Media_Str : constant String :=
         (case Media.Kind is
            when Media.None => "drive 8: host directory",
-           when others => "drive 8: " & Media.Attached_Name);
+           when others => "drive 8: " & Drive_Str & Media.Attached_Name);
       Img : constant String := Ada.Strings.Fixed.Trim (FPS'Image,
                                                       Ada.Strings.Left);
    begin
@@ -115,6 +123,8 @@ package body GUI is
       Item_Warp.Set_Active (Warp);
       Item_4080.Set_Active (Machine.Key_4080_Down);
       Item_Pause.Set_Active (Paused);
+      Item_TDE.Set_Active (Machine.True_Drive);
+      Item_TDE.Set_Sensitive (Machine.Drive_ROM_Found);
       if Machine.Model = C64 then
          Item_C64.Set_Active (True);
       else
@@ -195,7 +205,7 @@ package body GUI is
          return;
       end if;
       begin
-         Media.Attach (Path, Ok);
+         Machine.Attach (Path, Ok);
       exception
          when others => Ok := False;
       end;
@@ -233,7 +243,7 @@ package body GUI is
    procedure On_Detach (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
    begin
-      Media.Detach;
+      Machine.Detach;
       Update_Status;
    end On_Detach;
 
@@ -299,6 +309,15 @@ package body GUI is
          Update_Status;
       end if;
    end On_4080;
+
+   procedure On_True_Drive
+     (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if not Updating_Menu then
+         Machine.Set_True_Drive (Item.Get_Active);
+         Update_Status;
+      end if;
+   end On_True_Drive;
 
    procedure On_Mute (Item : access Gtk_Check_Menu_Item_Record'Class) is
    begin
@@ -551,6 +570,13 @@ package body GUI is
          FPS_Frames := FPS_Frames + Ran;
       end if;
 
+      if Now - LED_Time >= Milliseconds (200) then
+         LED_Time := Now;
+         if Machine.Drive_Active then
+            Update_Status;
+         end if;
+      end if;
+
       if Now - FPS_Time >= Seconds (1) then
          FPS := FPS_Frames;
          FPS_Frames := 0;
@@ -646,6 +672,9 @@ package body GUI is
       Add_Item (M_File, "D_etach image (use host directory)",
                 On_Detach'Access);
       Add_Separator (M_File);
+      Add_Check (M_File, "True 1541 drive emulation (D64)", Item_TDE,
+                 On_True_Drive'Access);
+      Add_Separator (M_File);
       Add_Item (M_File, "_Quit", On_Quit'Access);
 
       M_Machine := Add_Menu (Bar, "_Machine");
@@ -722,6 +751,7 @@ package body GUI is
       Win.Show_All;
       Timer := Glib.Main.Timeout_Add (4, On_Timer'Access);
       Gtk.Main.Main;
+      Machine.Shutdown;
       Audio.Stop;
    end Run;
 

@@ -10,6 +10,8 @@ package body Media is
    Image      : Byte_Array_Access := null;
    Image_Kind : Media_Kind := None;
    Image_Name : Unbounded_String;
+   Image_Path : Unbounded_String;
+   Writable   : Boolean := True;
 
    procedure Free is new Ada.Unchecked_Deallocation
      (Byte_Array, Byte_Array_Access);
@@ -67,6 +69,18 @@ package body Media is
          Image_Kind := PRG;
       end if;
       Image_Name := To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+      Image_Path := To_Unbounded_String (Path);
+      --  Probe whether the file may be written back
+      declare
+         use Ada.Streams.Stream_IO;
+         F : File_Type;
+      begin
+         Open (F, Append_File, Path);
+         Close (F);
+         Writable := True;
+      exception
+         when others => Writable := False;
+      end;
       Ok := True;
    end Attach;
 
@@ -81,6 +95,25 @@ package body Media is
 
    function Kind return Media_Kind is (Image_Kind);
    function Attached_Name return String is (To_String (Image_Name));
+   function Image_Data return Byte_Array_Access is (Image);
+   function Image_Writable return Boolean is (Writable);
+
+   procedure Save_Image is
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+   begin
+      if Image = null or else Image_Kind /= D64 or else not Writable then
+         return;
+      end if;
+      Create (F, Out_File, To_String (Image_Path));
+      Byte_Array'Write (Stream (F), Image.all);
+      Close (F);
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+   end Save_Image;
 
    ---------------------------------------------------------------------
    --  Name matching

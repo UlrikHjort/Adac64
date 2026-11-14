@@ -10,6 +10,11 @@ with SID;
 with VDC;
 with Keyboard;
 with Media;
+with Drive1541;
+use type Media.Media_Kind;
+with IEC;
+with Ada.Directories;
+with Ada.Command_Line;
 
 package body Machine is
 
@@ -68,6 +73,8 @@ package body Machine is
    NMI_Prev : Boolean := False;
    Half_Cycle : Natural := 0;
    Frames : Natural := 0;
+   Total_Cycles : Long_Long_Integer := 0;   --  1 MHz device time
+   Drive_On : Boolean := False;             --  true drive participating
    TOD_Div : Natural := 0;
 
    --  Typing / autostart
@@ -82,12 +89,15 @@ package body Machine is
    ---------------------------------------------------------------------
 
    function Bus_Read (Addr : Word) return Byte;
+   procedure Update_Drive_State;
    procedure Bus_Write (Addr : Word; Value : Byte);
    function VIC_Mem (Addr : Word) return Byte;
    function VIC_Color (Index : Natural) return Byte;
 
    package CPU is new MOS6502 (Read => Bus_Read, Write => Bus_Write);
    package VIC is new VIC_II (Mem_Read => VIC_Mem, Color_Read => VIC_Color);
+
+   function VIA_Fast return Boolean is (VIC.Fast_Mode and then not C64_Mode);
 
    ---------------------------------------------------------------------
    --  Memory map construction
@@ -274,15 +284,41 @@ package body Machine is
       end if;
    end CIA1_Port_Read;
 
+   procedure Sync_Drive is
+      --  Bring the drive up to the moment of the current bus access
+      --  (approximated as the last cycle of the executing instruction).
+      Offset : Natural := (if CPU.Current_Cycles > 0
+                           then CPU.Current_Cycles - 1 else 0);
+   begin
+      if Drive_On then
+         if VIA_Fast then
+            Offset := Offset / 2;
+         end if;
+         Drive1541.Run_Until (Total_Cycles + Long_Long_Integer (Offset));
+      end if;
+   end Sync_Drive;
+
+   procedure Update_IEC_Outputs is
+      PA  : constant Byte := CIA2.PRA and CIA2.DDRA;
+      Old_ATN : constant Boolean := IEC.C64_ATN;
+   begin
+      IEC.C64_ATN  := (PA and 16#08#) /= 0;
+      IEC.C64_CLK  := (PA and 16#10#) /= 0;
+      IEC.C64_DATA := (PA and 16#20#) /= 0;
+      if IEC.C64_ATN /= Old_ATN and then Drive_On then
+         Drive1541.ATN_Changed;
+      end if;
+   end Update_IEC_Outputs;
+
    function CIA2_Port_A_Read return Byte is
       PA : constant Byte := CIA.Port_A_Out (CIA2);
       V  : Byte := PA and 16#3F#;
    begin
-      --  Serial bus: no devices, lines reflect our own outputs (inverted)
-      if (PA and 16#10#) = 0 then
+      Sync_Drive;
+      if not IEC.CLK then
          V := V or 16#40#;
       end if;
-      if (PA and 16#20#) = 0 then
+      if not IEC.DATA then
          V := V or 16#80#;
       end if;
       return V;
@@ -411,9 +447,13 @@ package body Machine is
          when 16#DC00# .. 16#DCFF# =>
             CIA.Write (CIA1, Off, Value);
          when 16#DD00# .. 16#DDFF# =>
+            if Off mod 16 = 0 or else Off mod 16 = 2 then
+               Sync_Drive;
+            end if;
             CIA.Write (CIA2, Off, Value);
             if Off mod 16 = 0 or else Off mod 16 = 2 then
                Update_VIC_Bank;
+               Update_IEC_Outputs;
             end if;
          when others =>
             null;
@@ -507,8 +547,87 @@ package body Machine is
          Ok := False;
    end Load_ROM;
 
+   procedure Update_Drive_State is
+      Want : constant Boolean :=
+        True_Drive and then Drive1541.ROM_Loaded
+        and then Media.Kind = Media.D64;
+   begin
+      if Want and then not Drive_On then
+         Drive1541.Reset;
+         --  Line up the drive's clock with the computer's
+         Drive1541.Set_Time (Total_Cycles);
+      end if;
+      Drive_On := Want;
+      IEC.Drive_Present := Want;
+   end Update_Drive_State;
+
+   procedure Find_Drive_ROM (ROM_Dir : String) is
+      Ok : Boolean := False;
+      Exe_Dir : constant String :=
+        Ada.Directories.Containing_Directory (Ada.Command_Line.Command_Name);
+
+      procedure Try (Path : String) is
+      begin
+         if not Ok and then Ada.Directories.Exists (Path) then
+            Drive1541.Load_ROM (Path, Ok);
+         end if;
+      exception
+         when others => null;
+      end Try;
+   begin
+      if Drive1541.ROM_Loaded then
+         return;
+      end if;
+      if Length (Drive_ROM_Path) > 0 then
+         Try (To_String (Drive_ROM_Path));
+      end if;
+      Try (ROM_Dir & "/DRIVES/dos1541-325302-01+901229-05.bin");
+      Try (ROM_Dir & "/DRIVES/dos1541");
+      Try (Exe_Dir & "/../roms/drives/dos1541.bin");
+      Try ("roms/drives/dos1541.bin");
+      Try (Exe_Dir & "/../roms/drives/1541-II.251968-03.bin");
+   exception
+      when others => null;
+   end Find_Drive_ROM;
+
+   procedure Attach (Path : String; Ok : out Boolean) is
+   begin
+      Drive1541.Eject_Disk;
+      Media.Attach (Path, Ok);
+      if Ok and then Media.Kind = Media.D64 then
+         Drive1541.Insert_Disk;
+      end if;
+      Update_Drive_State;
+   end Attach;
+
+   procedure Detach is
+   begin
+      Drive1541.Eject_Disk;
+      Media.Detach;
+      Update_Drive_State;
+   end Detach;
+
+   procedure Set_True_Drive (On : Boolean) is
+   begin
+      True_Drive := On;
+      Update_Drive_State;
+   end Set_True_Drive;
+
+   function Drive_Active return Boolean is (Drive_On);
+   function Drive_ROM_Found return Boolean is (Drive1541.ROM_Loaded);
+   function Drive_LED return Boolean is (Drive_On and then Drive1541.LED_On);
+   function Drive_Motor return Boolean is
+     (Drive_On and then Drive1541.Motor_On);
+   function Drive_Track return Natural is (Drive1541.Current_Track);
+
+   procedure Shutdown is
+   begin
+      Drive1541.Flush;
+   end Shutdown;
+
    procedure Power_On (M : Model_Type; ROM_Dir : String; Ok : out Boolean) is
    begin
+      Find_Drive_ROM (ROM_Dir);
       Ok := True;
       Err := Null_Unbounded_String;
       Current_Model := M;
@@ -585,6 +704,14 @@ package body Machine is
       Rebuild_Map;
       NMI_Prev := False;
       Half_Cycle := 0;
+      Total_Cycles := 0;
+      IEC.C64_ATN := False;
+      IEC.C64_CLK := False;
+      IEC.C64_DATA := False;
+      Update_Drive_State;
+      if Drive1541.ROM_Loaded then
+         Drive1541.Reset;
+      end if;
       CPU.IRQ_Line := False;
       CPU.Reset;
    end Reset;
@@ -657,7 +784,7 @@ package body Machine is
          if Media.Kind not in Media.T64 | Media.PRG then
             return;    --  real tape routine
          end if;
-      elsif Dev /= 8 then
+      elsif Dev /= 8 or else Drive_On then
          return;
       end if;
 
@@ -709,7 +836,7 @@ package body Machine is
         RAM_Bank_Of (if C64_Mode then 0 else Bus_Read (16#C6#));
       Ok : Boolean;
    begin
-      if Dev /= 8 or else End_Addr < Start_Addr then
+      if Dev /= 8 or else Drive_On or else End_Addr < Start_Addr then
          return;
       end if;
       declare
@@ -807,7 +934,7 @@ package body Machine is
 
    procedure Autostart (Path : String; Ok : out Boolean) is
    begin
-      Media.Attach (Path, Ok);
+      Attach (Path, Ok);
       if not Ok then
          return;
       end if;
@@ -855,7 +982,10 @@ package body Machine is
             end if;
          when Wait_Load =>
             Auto_Frames := Auto_Frames + 1;
-            if Length (Type_Queue) = 0 and then Auto_Frames > 10 then
+            --  Done once everything typed (including RUN) was consumed
+            if Length (Type_Queue) = 0 and then Auto_Frames > 10
+              and then Bus_Read (if C64_Mode then 16#C6# else 16#D0#) = 0
+            then
                Auto := Idle;
             end if;
       end case;
@@ -867,6 +997,7 @@ package body Machine is
 
    procedure Clock_Devices (N : Natural) is
    begin
+      Total_Cycles := Total_Cycles + Long_Long_Integer (N);
       VIC.Tick (N);
       CIA.Tick (CIA1, N);
       CIA.Tick (CIA2, N);
@@ -914,6 +1045,9 @@ package body Machine is
             if Dev > 0 then
                Clock_Devices (Dev);
             end if;
+         end if;
+         if Drive_On then
+            Drive1541.Run_Until (Total_Cycles);
          end if;
       end loop;
 
