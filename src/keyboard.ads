@@ -41,6 +41,13 @@ package Keyboard is
    --  Reverse scan: columns (active low) seen when rows are driven.
 
    procedure Press (Col : Column; R : Row; Down : Boolean);
+
+   procedure Type_Keys (S : String);
+   --  Queue text to be typed through the keyboard matrix (works for
+   --  programs that scan the keyboard themselves, e.g. CP/M); LF = RETURN.
+
+   procedure Tick_Typing;
+   --  Advance matrix typing; call once per frame.
    --  Direct matrix manipulation.
 
 end Keyboard;

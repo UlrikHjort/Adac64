@@ -47,6 +47,9 @@ package Media is
    --  C128), or "".
 
    function First_Program_Name return String;
+
+   function Has_Boot_Sector return Boolean;
+   --  Track 1 sector 0 starts with "CBM": the C128 KERNAL boots it itself.
    --  D64/G64: name of the first PRG ("*" if unknown or unprintable).
    --  Load address of the first file on the attached medium (0 if none).
 

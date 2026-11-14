@@ -4,6 +4,7 @@ with Ada.Unchecked_Deallocation;
 with Interfaces; use Interfaces;
 
 with MOS6502;
+with Z80;
 with VIC_II;
 with CIA;
 with SID;
@@ -42,10 +43,19 @@ package body Machine is
    Color_RAM : Byte_Array (0 .. 2047) := (others => 0);
 
    IO_Page : constant Integer := -1;
+   Color_Page : constant Integer := -2;   --  Z80 view of colour RAM
 
    type Page_Map is array (Byte) of Integer;
    Read_Map  : Page_Map := (others => 0);
    Write_Map : Page_Map := (others => 0);
+   Z80_Read_Map  : Page_Map := (others => 0);   --  C128 Z80 view
+   Z80_Write_Map : Page_Map := (others => 0);
+
+   --  C128 dual CPU: MMU MCR bit 0 selects the 8502 (1) or the Z80 (0)
+   Z80_Active   : Boolean := False;
+   CPU_Started  : Boolean := True;     --  8502 has left reset
+   Z80_Half     : Natural := 0;
+   Z80_Frames   : Natural := 0;        --  safety net if the Z80 hangs
 
    Current_Model : Model_Type := C64;
    C64_Mode      : Boolean := True;    --  memory map is C64 style
@@ -126,6 +136,13 @@ package body Machine is
    function VIC_Color (Index : Natural) return Byte;
 
    package CPU is new MOS6502 (Read => Bus_Read, Write => Bus_Write);
+
+   function Z80_Mem_Read (Addr : Word) return Byte;
+   procedure Z80_Mem_Write (Addr : Word; Value : Byte);
+   function Z80_In (Port : Word) return Byte;
+   procedure Z80_Out (Port : Word; Value : Byte);
+   package ZCPU is new Z80 (Read => Z80_Mem_Read, Write => Z80_Mem_Write,
+                            In_Port => Z80_In, Out_Port => Z80_Out);
    package VIC is new VIC_II (Mem_Read => VIC_Mem, Color_Read => VIC_Color);
 
    function VIA_Fast return Boolean is (VIC.Fast_Mode and then not C64_Mode);
@@ -298,6 +315,32 @@ package body Machine is
          end;
       end if;
 
+      --  Z80 view: same banking, but I/O is only reachable through IN/OUT
+      --  (RAM at $D000-$DFFF), and in RAM bank 0 with I/O enabled the Z80
+      --  BIOS ROM (upper 4K of the KERNAL ROM image) is at $0000-$0FFF.
+      Z80_Read_Map := Read_Map;
+      Z80_Write_Map := Write_Map;
+      for P in Byte range 16#D0# .. 16#DF# loop
+         if Z80_Read_Map (P) = IO_Page then
+            Z80_Read_Map (P) := Write_Map (16#CF#) + 256 * Natural (P - 16#CF#);
+            Z80_Write_Map (P) := Z80_Read_Map (P);
+         end if;
+      end loop;
+      if (MMU_CR and 16#C0#) = 0 then
+         --  Bank 0: BIOS ROM reads; writes go to RAM at $D000-$DFFF
+         for P in Byte range 0 .. 16#0F# loop
+            Z80_Read_Map (P) := ROM_C128_Kernal + 16#1000# + Natural (P) * 256;
+            Z80_Write_Map (P) := 16#D000# + Natural (P) * 256;
+         end loop;
+      end if;
+      if (MMU_CR and 1) = 0 then
+         --  With I/O enabled the Z80 sees colour RAM at $1000-$13FF
+         for P in Byte range 16#10# .. 16#13# loop
+            Z80_Read_Map (P) := Color_Page;
+            Z80_Write_Map (P) := Color_Page;
+         end loop;
+      end if;
+
       Kernal_High := (Shift_Right (MMU_CR, 4) and 3) = 0;
       VIC_RAM_Base := Natural (Shift_Right (MMU_RCR, 6) and 1) * 16#10000#;
       VIC_Char_ROM := (Lines and 4) = 0;
@@ -369,7 +412,8 @@ package body Machine is
       --  A write by the computer becomes visible to the drive one cycle
       --  later (CIA output, 7406 inverter and VIA input latch), so for
       --  writes the drive is run one cycle further before the change.
-      Offset : Natural := (if CPU.Current_Cycles > Instr_Ticked + 1
+      Offset : Natural := (if In_Step
+                             and then CPU.Current_Cycles > Instr_Ticked + 1
                            then CPU.Current_Cycles - 1 - Instr_Ticked
                            else 0);
    begin
@@ -438,6 +482,21 @@ package body Machine is
             if (Value and 16#40#) /= 0 then
                C64_Mode := True;      --  GO64
                VIC.Has_C128_Regs := True;
+               Z80_Active := False;
+            elsif Current_Model = C128 then
+               if (Value and 1) = 0 then
+                  Z80_Active := True;
+               else
+                  Z80_Active := False;
+                  Z80_Frames := 0;
+                  if not CPU_Started then
+                     --  The 8502 leaves reset when the Z80 hands over
+                     CPU_Started := True;
+                     CPU.Reset;
+                     CPU.PC := Make_Word (Mem (ROM_C128_Kernal + 16#3FFC#),
+                                          Mem (ROM_C128_Kernal + 16#3FFD#));
+                  end if;
+               end if;
             end if;
          when 6 => MMU_RCR := Value;
          when 7 =>
@@ -674,6 +733,57 @@ package body Machine is
          IO_Write (Addr, Value);
       end if;
    end Bus_Write;
+
+   ---------------------------------------------------------------------
+   --  Z80 bus (C128)
+   ---------------------------------------------------------------------
+
+   function Z80_Mem_Read (Addr : Word) return Byte is
+   begin
+      if Hi (Addr) = 16#FF# and then Addr <= 16#FF04# then
+         return MMU_Read (Natural (Addr - 16#FF00#));
+      end if;
+      if Z80_Read_Map (Hi (Addr)) = Color_Page then
+         return Color_RAM (CPU_Color_Bank * 1024 + Natural (Addr - 16#1000#))
+           or 16#F0#;
+      end if;
+      return Mem (Z80_Read_Map (Hi (Addr)) + Natural (Addr and 16#FF#));
+   end Z80_Mem_Read;
+
+   procedure Z80_Mem_Write (Addr : Word; Value : Byte) is
+   begin
+      if Hi (Addr) = 16#FF# and then Addr <= 16#FF04# then
+         if Addr = 16#FF00# then
+            MMU_CR := Value;
+         else
+            MMU_CR := MMU_PCR (Natural (Addr - 16#FF00#));
+         end if;
+         Rebuild_Map;
+         return;
+      end if;
+      if Z80_Write_Map (Hi (Addr)) = Color_Page then
+         Color_RAM (CPU_Color_Bank * 1024 + Natural (Addr - 16#1000#)) :=
+           Value and 16#0F#;
+         return;
+      end if;
+      Mem (Z80_Write_Map (Hi (Addr)) + Natural (Addr and 16#FF#)) := Value;
+   end Z80_Mem_Write;
+
+   --  The Z80 reaches the C128 I/O chips through its I/O space
+   function Z80_In (Port : Word) return Byte is
+   begin
+      if Port in 16#D000# .. 16#DFFF# then
+         return IO_Read (Port);
+      end if;
+      return 16#FF#;
+   end Z80_In;
+
+   procedure Z80_Out (Port : Word; Value : Byte) is
+   begin
+      if Port in 16#D000# .. 16#DFFF# then
+         IO_Write (Port, Value);
+      end if;
+   end Z80_Out;
 
    ---------------------------------------------------------------------
    --  ROM loading
@@ -917,6 +1027,13 @@ package body Machine is
       end if;
       CPU.IRQ_Line := False;
       CPU.Reset;
+      ZCPU.Reset;
+      Z80_Half := 0;
+      Z80_Frames := 0;
+      --  A C128 powers up with the Z80 running its BIOS, which then hands
+      --  the bus to the 8502 (see MMU_Write).
+      Z80_Active := Current_Model = C128;
+      CPU_Started := Current_Model /= C128;
    end Reset;
 
    function Peek (Addr : Word) return Byte is
@@ -1175,7 +1292,11 @@ package body Machine is
          function Addr return String is (Natural'Image (Natural (LA)));
       begin
          Auto_Path := To_Unbounded_String (Path);
-         if Current_Model = C128 then
+         if Current_Model = C128 and then Media.Has_Boot_Sector then
+            --  Boot disk (e.g. CP/M): the KERNAL boots it by itself
+            Auto := Idle;
+            return;
+         elsif Current_Model = C128 then
             --  DLOAD like a C128 user (some loaders read its buffer)
             if LA in 16#1C01# | 16#4001# | 16#1201# or else LA = 0 then
                Cmd := To_Unbounded_String ("DLOAD" & Q & NL & "RUN" & NL);
@@ -1261,7 +1382,7 @@ package body Machine is
    --  Snapshots
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP2";
+   Snapshot_Magic : constant String := "ADAC64SNAP3";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;
@@ -1300,6 +1421,9 @@ package body Machine is
       Boolean'Write (S, CPU.Jammed);
       Boolean'Write (S, IEC.C64_ATN); Boolean'Write (S, IEC.C64_CLK);
       Boolean'Write (S, IEC.C64_DATA);
+      Boolean'Write (S, Z80_Active); Boolean'Write (S, CPU_Started);
+      Natural'Write (S, Z80_Half);
+      ZCPU.Save_State (S);
       VIC.Save_State (S);
       SID.Save_State (S);
       VDC.Save_State (S);
@@ -1373,6 +1497,9 @@ package body Machine is
       Boolean'Read (S, CPU.Jammed);
       Boolean'Read (S, IEC.C64_ATN); Boolean'Read (S, IEC.C64_CLK);
       Boolean'Read (S, IEC.C64_DATA);
+      Boolean'Read (S, Z80_Active); Boolean'Read (S, CPU_Started);
+      Natural'Read (S, Z80_Half);
+      ZCPU.Load_State (S);
       VIC.Load_State (S);
       SID.Load_State (S);
       VDC.Load_State (S);
@@ -1544,6 +1671,18 @@ package body Machine is
 
    procedure End_Of_Frame is
    begin
+      if Z80_Active and then not CPU_Started then
+         --  Safety net: the Z80 BIOS never handed over; start the 8502
+         Z80_Frames := Z80_Frames + 1;
+         if Z80_Frames > 10 then
+            Z80_Active := False;
+            CPU_Started := True;
+            CPU.Reset;
+            MMU_CR := 0;
+            Rebuild_Map;
+            CPU.Reset;
+         end if;
+      end if;
       --  50 Hz TOD input
       CIA.Tick_TOD (CIA1);
       CIA.Tick_TOD (CIA2);
@@ -1554,6 +1693,7 @@ package body Machine is
       end if;
 
       Feed_Keyboard;
+      Keyboard.Tick_Typing;
       Autostart_Step;
       Frames := Frames + 1;
    end End_Of_Frame;
@@ -1570,6 +1710,20 @@ package body Machine is
          N := VIC.Stall_Cycles;
          VIC.Stall_Cycles := 0;
          Clock_Devices (N);
+      elsif Z80_Active then
+         ZCPU.INT_Line := VIC.IRQ or else CIA1.IRQ;
+         NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
+         if NMI_Now and then not NMI_Prev then
+            ZCPU.NMI_Pending := True;
+         end if;
+         NMI_Prev := NMI_Now;
+         ZCPU.Step (N);
+         --  ~2 MHz effective: two T-states per 1 MHz device cycle
+         Dev := (N + Z80_Half) / 2;
+         Z80_Half := (N + Z80_Half) mod 2;
+         if Dev > 0 then
+            Clock_Devices (Dev);
+         end if;
       else
          if Kernal_High then
             if CPU.PC = 16#FFD5# then

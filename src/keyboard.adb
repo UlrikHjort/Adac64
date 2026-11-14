@@ -406,4 +406,46 @@ package body Keyboard is
       return not Cols;
    end Scan_Cols;
 
+   Typing : String (1 .. 4096);
+   Typing_Len, Typing_Pos : Natural := 0;
+   Typing_Phase : Natural := 0;
+   Typing_Code : constant Natural := 1000;   --  pseudo hardware keycode
+
+   procedure Type_Keys (S : String) is
+   begin
+      for C of S loop
+         if Typing_Len < Typing'Last then
+            Typing_Len := Typing_Len + 1;
+            Typing (Typing_Len) := C;
+         end if;
+      end loop;
+   end Type_Keys;
+
+   procedure Tick_Typing is
+   begin
+      if Typing_Pos >= Typing_Len then
+         Typing_Pos := 0;
+         Typing_Len := 0;
+         return;
+      end if;
+      Typing_Phase := Typing_Phase + 1;
+      if Typing_Phase = 1 then
+         declare
+            C : constant Character := Typing (Typing_Pos + 1);
+            KV : constant Unsigned_32 :=
+              (if C = ASCII.LF or else C = ASCII.CR then GDK_Return
+               else Character'Pos (C));
+         begin
+            Active (Typing_Code) := Map_Key (KV);
+            Rebuild;
+         end;
+      elsif Typing_Phase = 4 then
+         Active (Typing_Code) := No_Map;
+         Rebuild;
+      elsif Typing_Phase >= 7 then
+         Typing_Phase := 0;
+         Typing_Pos := Typing_Pos + 1;
+      end if;
+   end Tick_Typing;
+
 end Keyboard;

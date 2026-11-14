@@ -24,7 +24,8 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 `shot.png` / `vdc_shot.png`), `--png FILE`, `--type "TEXT\n"`, `--wav FILE`,
 `--dump FILE` (64 KB memory + 2 KB drive RAM), `--type-at FRAME TEXT`,
 `--save-snapshot F`, `--load-snapshot F`, `--break ADDR` and
-`--monitor "r;d e5cd;m 0400"` (monitor commands after the run).
+`--monitor "r;d e5cd;m 0400"` (monitor commands after the run), and
+`--keys-at FRAME TEXT` (type through the keyboard matrix, e.g. for CP/M).
 
 ## What is emulated
 
@@ -36,6 +37,7 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 | CIA 6526 x2 | Timers A/B (all modes), TOD clock with alarm, ICR, keyboard, joysticks, VIC bank select. |
 | C128 MMU | Banking of 128 KB, BASIC/KERNAL/char ROMs, common RAM, zero-page/stack relocation, PCR registers, GO64. |
 | C128 VDC 8563 | 64 KB VRAM, block copy/fill, text mode with attributes (blink, underline, reverse, alt charset), bitmap mode, cursor. |
+| Z80 (C128) | Full instruction set incl. undocumented IXH/IXL and DDCB copies, IM 0/1/2, NMI. Runs the Z80 BIOS at power-on, then hands over to the 8502 as on the real machine; CPU switching through the MMU. Boots CP/M 3.0. |
 | C128 extras | 2 MHz mode, extended keyboard (`$D02F`), 40/80 key, 2 KB banked colour RAM. |
 
 ### Drive 8
@@ -78,6 +80,14 @@ Magic Desk, C64 Game System, Dinamic and EasyFlash (read-only flash, 256 bytes
 of RAM at `$DF00`). On a C128 a cartridge makes the KERNAL boot in C64 mode,
 as on the real machine.
 
+### CP/M
+
+The C128's Z80 boots CP/M Plus from the official Commodore system disk (a
+D64; available at <https://www.zimmers.net/anonftp/pub/cbm/demodisks/c128/>,
+e.g. `cpm.system.6228151676.d64.gz`). Attach or autostart it on the C128;
+the KERNAL boots it from its boot sector (40 or 80 columns). Loading takes a
+while at 1541 speed; warp (F11) helps.
+
 ### Snapshots
 
 Machine → Save/Load snapshot saves the complete state (computer, 1541 with
@@ -112,7 +122,8 @@ Disk images can also be dropped onto the window.
 
 ## Source layout
 
-    src/mos6502.*    CPU core (generic over the bus)
+    src/mos6502.*    6502 CPU core (generic over the bus)
+    src/z80.*        Z80 CPU core (C128 / CP/M)
     src/vic_ii.*     VIC-II        src/sid.*      SID
     src/cia.*        CIA           src/vdc.*      VDC
     src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop

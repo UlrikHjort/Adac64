@@ -16,6 +16,7 @@
 --    --load-snapshot F start from a saved machine state
 --    --break ADDR       stop at a breakpoint (hex address)
 --    --monitor "C;C"    run monitor commands after the headless run
+--    --keys-at F TEXT   type TEXT through the keyboard matrix at frame F
 --    --dump FILE        headless: write the 64 KB CPU view of memory
 --    --wav FILE         headless: record SID output to a WAV file
 
@@ -28,6 +29,7 @@ with Machine;
 with Blit;
 with GUI;
 with Monitor_Commands;
+with Keyboard;
 with SID;
 with Wav_Sink;
 
@@ -115,6 +117,12 @@ begin
          elsif A = "--monitor" and then I < Argument_Count then
             I := I + 1;
             Mon_Cmds := To_Unbounded_String (Argument (I));
+         elsif A = "--keys-at" and then I + 1 < Argument_Count then
+            Timed_Count := Timed_Count + 1;
+            Timed (Timed_Count) :=
+              (Natural'Value (Argument (I + 1)),
+               To_Unbounded_String (ASCII.NUL & Unescape (Argument (I + 2))));
+            I := I + 2;
          elsif A = "--dump" and then I < Argument_Count then
             I := I + 1;
             Dump := To_Unbounded_String (Argument (I));
@@ -176,7 +184,15 @@ begin
          end if;
          for T of Timed (1 .. Timed_Count) loop
             if T.Frame = F then
-               Machine.Type_Text (To_String (T.Text));
+               declare
+                  Txt : constant String := To_String (T.Text);
+               begin
+                  if Txt'Length > 0 and then Txt (Txt'First) = ASCII.NUL then
+                     Keyboard.Type_Keys (Txt (Txt'First + 1 .. Txt'Last));
+                  else
+                     Machine.Type_Text (Txt);
+                  end if;
+               end;
             end if;
          end loop;
          if not Typed and then Machine.Screen_Contains ("READY.") then

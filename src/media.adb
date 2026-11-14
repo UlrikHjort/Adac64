@@ -900,6 +900,13 @@ package body Media is
       when others => return "";
    end Start_Program_Name;
 
+   function Has_Boot_Sector return Boolean is
+     (Image_Kind in D64 | G64 and then Disk /= null
+      and then Disk'Length > 3
+      and then Disk (0) = Character'Pos ('C')
+      and then Disk (1) = Character'Pos ('B')
+      and then Disk (2) = Character'Pos ('M'));
+
    function First_Program_Name return String is
       Result : Unbounded_String;
       Clean  : Boolean := True;
