@@ -1,4 +1,4 @@
---  MOS 6581 SID sound chip.
+--  MOS 6581 / 8580 SID sound chip.
 --
 --  Samples are generated synchronously with the emulated clock
 --  (Clock is called with the number of elapsed cycles), so register
@@ -13,6 +13,12 @@ package SID is
    Clock_Rate  : Natural := 985_248;    --  phi2 (PAL; NTSC 1_022_727)
 
    procedure Set_Clock (Hz : Natural);
+
+   type Chip_Model is (MOS6581, MOS8580);
+   procedure Set_Model (M : Chip_Model);
+   function Model return Chip_Model;
+   --  6581: original C64 (sparse combined waveforms, non-linear filter,
+   --  loud volume-register digis); 8580: C64C/C128DCR.
 
    type Sample is range -32768 .. 32767;
    for Sample'Size use 16;

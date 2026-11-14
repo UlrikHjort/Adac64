@@ -7,6 +7,7 @@ package GUI is
 
    Drive_Choice : Ada.Strings.Unbounded.Unbounded_String;
    Standard_Given : Boolean := False;   --  --pal / --ntsc on the command line
+   SID_Given : Boolean := False;        --  --sid on the command line
    --  "1541" / "1571" from the command line ("" = use the saved setting)
 
    procedure Run (Model : Machine.Model_Type; ROM_Dir : String;

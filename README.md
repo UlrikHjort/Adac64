@@ -32,8 +32,8 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 | Part | Notes |
 |------|-------|
 | 6510 / 8502 CPU | All documented and the stable undocumented opcodes, NMOS decimal mode, exact cycle counts. Passes Klaus Dormann's 6502 functional test. |
-| VIC-II (PAL 6569) | Cycle-exact pixel output (mid-line colour/mode splits, side-border opening), all text/bitmap modes, ECM, smooth scroll, badlines with cycle stealing, sprites (expand, multicolour, priority, collisions, MSB X), border flip-flops (top/bottom border opening), raster IRQ. |
-| SID 6581 | 3 voices, all waveforms, ring mod, sync, ADSR with real rate tables, multimode filter, volume-register digis. Output via PulseAudio, which also paces emulation. |
+| VIC-II (PAL 6569 / NTSC 6567R8) | Cycle-exact pixel output (mid-line colour/mode splits, side-border opening), all text/bitmap modes, ECM, smooth scroll, badlines with cycle stealing, sprites (expand, multicolour, priority, collisions, MSB X), border flip-flops (top/bottom border opening), raster IRQ. |
+| SID 6581 / 8580 | 3 voices, all waveforms incl. modelled combined waveforms (sparse on the 6581, fuller on the 8580), ring mod, sync, ADSR with real rate tables and the ADSR delay bug, multimode filter with each chip's cutoff curve and resonance, OSC3/ENV3 readback, volume-register digis (loud on the 6581, nearly silent on the 8580 as on real hardware). Machine menu or `--sid 6581\|8580`. Output via PulseAudio, which also paces emulation. |
 | CIA 6526 x2 | Timers A/B (all modes), TOD clock with alarm, ICR, keyboard, joysticks, VIC bank select. |
 | C128 MMU | Banking of 128 KB, BASIC/KERNAL/char ROMs, common RAM, zero-page/stack relocation, PCR registers, GO64. |
 | C128 VDC 8563 | 64 KB VRAM, block copy/fill, text mode with attributes (blink, underline, reverse, alt charset), bitmap mode, cursor. |

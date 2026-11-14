@@ -41,6 +41,7 @@ with Keyboard;
 with Media;
 with Audio;
 with SID;
+use type SID.Chip_Model;
 with Blit;
 with Monitor;
 with Settings;
@@ -556,8 +557,20 @@ package body GUI is
       Sync_Menu;
    end On_Standard;
 
+   Item_6581, Item_8580 : Gtk_Radio_Menu_Item;
+
+   procedure On_SID_Model (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      SID.Set_Model (if Gtk_Radio_Menu_Item (Item) = Item_8580
+                     then SID.MOS8580 else SID.MOS6581);
+   end On_SID_Model;
+
    procedure Save_Settings is
    begin
+      Settings.Set ("sid", (if SID.Model = SID.MOS8580 then "8580" else "6581"));
       Settings.Set ("standard",
                     (if Machine.Standard = Machine.NTSC then "ntsc" else "pal"));
       Settings.Set ("drive", (if Machine.Drive_Type = Drive1541.D1571
@@ -1120,7 +1133,7 @@ package body GUI is
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
-      Drive_Group, Std_Group :
+      Drive_Group, Std_Group, SID_Group :
         Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -1196,6 +1209,10 @@ package body GUI is
                  On_Standard'Access);
       Add_Radio (M_Machine, "NTSC (America, 60 Hz)", Std_Group, Item_NTSC,
                  On_Standard'Access);
+      Add_Radio (M_Machine, "SID 6581 (original C64)", SID_Group, Item_6581,
+                 On_SID_Model'Access);
+      Add_Radio (M_Machine, "SID 8580 (C64C / C128DCR)", SID_Group, Item_8580,
+                 On_SID_Model'Access);
       Add_Separator (M_Machine);
       Add_Item (M_Machine, "_Reset (F12)", On_Reset'Access);
       Add_Separator (M_Machine);
@@ -1332,6 +1349,16 @@ package body GUI is
       Item_CRT.Set_Active (CRT_Filter);
       Updating_Menu := False;
 
+      if not SID_Given and then Settings.Get ("sid", "6581") = "8580" then
+         SID.Set_Model (SID.MOS8580);
+      end if;
+      Updating_Menu := True;
+      if SID.Model = SID.MOS8580 then
+         Item_8580.Set_Active (True);
+      else
+         Item_6581.Set_Active (True);
+      end if;
+      Updating_Menu := False;
       if not Standard_Given and then Settings.Get ("standard", "pal") = "ntsc"
       then
          Machine.Set_Video_Standard (Machine.NTSC);

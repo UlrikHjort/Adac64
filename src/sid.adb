@@ -48,6 +48,131 @@ package body SID is
 
    Last_Write : Byte := 0;
 
+   Chip : Chip_Model := MOS6581;
+
+   --  Combined waveforms (index: control bits 6..4 = P S T) as a function
+   --  of the 12-bit sawtooth value.  On the real chips the selected
+   --  waveform outputs are wired together and zero bits pull their
+   --  neighbours down: the 6581 gives sparse, quiet results, the 8580
+   --  fuller ones.  The tables come from a neighbour-weighted bit model.
+   type Combo_Table is array (Chip_Model, 3 .. 7, 0 .. 4095) of U32;
+   Combo : Combo_Table;
+
+   --  Filter cutoff coefficient per FC register value (11 bits), for a
+   --  Chamberlin filter run at 4x the output sample rate.
+   Oversample : constant := 4;
+   type Cutoff_Table is array (Chip_Model, 0 .. 2047) of Float;
+   Cutoff_F : Cutoff_Table;
+
+   procedure Set_Model (M : Chip_Model) is
+   begin
+      Chip := M;
+   end Set_Model;
+
+   function Model return Chip_Model is (Chip);
+
+   procedure Build_Tables is
+      type Point is record
+         Reg : Natural;
+         Hz  : Float;
+      end record;
+      type Curve is array (Positive range <>) of Point;
+      --  Measured cutoff curves (approximately, after reSID's f0 points);
+      --  the 6581 has its characteristic jump at register value 1024.
+      C6581 : constant Curve :=
+        ((0, 220.0), (128, 230.0), (256, 250.0), (384, 300.0),
+         (512, 420.0), (640, 780.0), (768, 1600.0), (832, 2300.0),
+         (896, 3200.0), (960, 4300.0), (992, 5000.0), (1008, 5400.0),
+         (1016, 5700.0), (1023, 6000.0), (1024, 4600.0), (1032, 4800.0),
+         (1056, 5300.0), (1088, 6000.0), (1120, 6600.0), (1152, 7200.0),
+         (1280, 9500.0), (1408, 12000.0), (1536, 14500.0),
+         (1664, 16000.0), (1792, 17100.0), (1920, 17700.0),
+         (2047, 18000.0));
+      C8580 : constant Curve :=
+        ((0, 30.0), (128, 800.0), (256, 1600.0), (384, 2500.0),
+         (512, 3300.0), (640, 4100.0), (768, 4800.0), (896, 5600.0),
+         (1024, 6500.0), (1152, 7500.0), (1280, 8400.0), (1408, 9200.0),
+         (1536, 9800.0), (1664, 10500.0), (1792, 11000.0),
+         (1920, 11700.0), (2047, 12500.0));
+
+      function Interp (C : Curve; R : Natural) return Float is
+      begin
+         for K in C'First .. C'Last - 1 loop
+            if R >= C (K).Reg and then R < C (K + 1).Reg then
+               return C (K).Hz + (C (K + 1).Hz - C (K).Hz) *
+                 Float (R - C (K).Reg) / Float (C (K + 1).Reg - C (K).Reg);
+            end if;
+         end loop;
+         return C (C'Last).Hz;
+      end Interp;
+
+      type Thresholds is array (3 .. 7) of Float;
+      Thr : constant array (Chip_Model) of Thresholds :=
+        (MOS6581 => (3 => 0.80, 4 => 1.0, 5 => 0.90, 6 => 0.93, 7 => 0.85),
+         MOS8580 => (3 => 0.62, 4 => 1.0, 5 => 0.70, 6 => 0.72, 7 => 0.68));
+      Weight : array (0 .. 11) of Float;
+   begin
+      for M in Chip_Model loop
+         for R in 0 .. 2047 loop
+            declare
+               Hz : constant Float :=
+                 (if M = MOS6581 then Interp (C6581, R) else Interp (C8580, R));
+            begin
+               Cutoff_F (M, R) := 2.0 * Sin (Ada.Numerics.Pi * Hz /
+                                    Float (Sample_Rate * Oversample));
+            end;
+         end loop;
+      end loop;
+
+      for D in Weight'Range loop
+         Weight (D) := 0.5 ** D;
+      end loop;
+      for M in Chip_Model loop
+         for C in 3 .. 7 loop
+            for Saw in 0 .. 4095 loop
+               declare
+                  Tri : constant Natural :=
+                    (if Saw >= 2048 then 4095 - (Saw * 2) mod 4096
+                     else (Saw * 2) mod 4096);
+                  Inp : array (0 .. 11) of Float;
+                  N : Float;
+                  V : U32 := 0;
+               begin
+                  for I in 0 .. 11 loop
+                     N := 0.0;
+                     Inp (I) := 0.0;
+                     if C mod 2 = 1 then
+                        Inp (I) := Inp (I) + Float ((Tri / 2 ** I) mod 2);
+                        N := N + 1.0;
+                     end if;
+                     if (C / 2) mod 2 = 1 then
+                        Inp (I) := Inp (I) + Float ((Saw / 2 ** I) mod 2);
+                        N := N + 1.0;
+                     end if;
+                     Inp (I) := (if N > 0.0 then Inp (I) / N else 1.0);
+                  end loop;
+                  for I in 0 .. 11 loop
+                     if Inp (I) >= 1.0 then
+                        declare
+                           Num, Den : Float := 0.0;
+                        begin
+                           for J in 0 .. 11 loop
+                              Num := Num + Weight (abs (I - J)) * Inp (J);
+                              Den := Den + Weight (abs (I - J));
+                           end loop;
+                           if Num / Den >= Thr (M) (C) then
+                              V := V or Shift_Left (1, I);
+                           end if;
+                        end;
+                     end if;
+                  end loop;
+                  Combo (M, C, Saw) := V;
+               end;
+            end loop;
+         end loop;
+      end loop;
+   end Build_Tables;
+
    procedure Set_Clock (Hz : Natural) is
    begin
       Clock_Rate := Hz;
@@ -63,13 +188,20 @@ package body SID is
       Filt_BP := 0.0;
    end Reset;
 
+   function Wave_Bits (I : Natural; Any : out Boolean) return U32;
+
    function Read (Reg : Natural) return Byte is
    begin
       case Reg mod 32 is
          when 16#19# | 16#1A# =>
             return 16#FF#;    --  paddles not connected
-         when 16#1B# =>
-            return Byte (Shift_Right (Voices (2).Acc, 16) and 16#FF#);
+         when 16#1B# =>    --  OSC3: upper 8 bits of voice 3's waveform
+            declare
+               Any : Boolean;
+               W : constant U32 := Wave_Bits (2, Any);
+            begin
+               return Byte (Shift_Right (W, 4) and 16#FF#);
+            end;
          when 16#1C# =>
             return Byte (Voices (2).Level);
          when others =>
@@ -126,6 +258,7 @@ package body SID is
       SR : constant Byte := Regs (Idx * 7 + 6);
       Rate : Natural;
       Period : Natural;
+      Left, Dist : Natural;
    begin
 
       case Vo.Env is
@@ -135,9 +268,16 @@ package body SID is
       end case;
       Period := Rate_Periods (Rate);
 
-      Vo.Rate_Count := Vo.Rate_Count + Cycles;
-      while Vo.Rate_Count >= Period loop
-         Vo.Rate_Count := Vo.Rate_Count - Period;
+      --  15-bit rate counter that fires when it equals the period.  If
+      --  the period is lowered below the current count the counter has to
+      --  wrap around first (the well-known "ADSR delay bug").
+      Left := Cycles;
+      loop
+         Dist := (if Vo.Rate_Count < Period then Period - Vo.Rate_Count
+                  else 32768 - Vo.Rate_Count + Period);
+         exit when Left < Dist;
+         Left := Left - Dist;
+         Vo.Rate_Count := 0;
 
          if Vo.Env = Attack then
             Vo.Level := Vo.Level + 1;
@@ -149,12 +289,13 @@ package body SID is
             --  Exponential decay approximation
             declare
                Exp_Period : constant Natural :=
-                 (if Vo.Level >= 16#5D# then 1
-                  elsif Vo.Level >= 16#36# then 2
-                  elsif Vo.Level >= 16#1A# then 4
-                  elsif Vo.Level >= 16#0E# then 8
-                  elsif Vo.Level >= 16#06# then 16
-                  else 30);
+                 (if Vo.Level > 16#5D# then 1
+                  elsif Vo.Level > 16#36# then 2
+                  elsif Vo.Level > 16#1A# then 4
+                  elsif Vo.Level > 16#0E# then 8
+                  elsif Vo.Level > 16#06# then 16
+                  elsif Vo.Level > 0 then 30
+                  else 1);
             begin
                Vo.Exp_Count := Vo.Exp_Count + 1;
                if Vo.Exp_Count >= Exp_Period then
@@ -172,46 +313,47 @@ package body SID is
             end;
          end if;
       end loop;
+      Vo.Rate_Count := (Vo.Rate_Count + Left) mod 32768;
    end Clock_Envelope;
 
-   function Waveform (I : Natural) return Integer is
+   function Wave_Bits (I : Natural; Any : out Boolean) return U32 is
       Vo  : Voice renames Voices (I);
       Src : constant Natural := (if I = 0 then 2 else I - 1);
       Acc : constant U32 := Vo.Acc;
       Ctl : constant Byte := Vo.Control;
+      Sel : constant Natural := Natural (Shift_Right (Ctl, 4) and 7);
+      Saw : constant U32 := Shift_Right (Acc, 12);
+      Pulse_High : constant Boolean :=
+        (Ctl and 16#08#) /= 0 or else Saw >= Vo.PW;
       Out_V : U32 := 16#FFF#;
-      Any : Boolean := False;
    begin
-      if (Ctl and 16#10#) /= 0 then    --  triangle
-         declare
-            Msb : U32 := Acc and 16#800000#;
-            T : U32;
-         begin
-            if (Ctl and 16#04#) /= 0 then   --  ring modulation
-               Msb := Msb xor (Voices (Src).Acc and 16#800000#);
+      Any := (Ctl and 16#F0#) /= 0;
+      case Sel is
+         when 0 =>
+            null;
+         when 1 =>    --  triangle (with optional ring modulation)
+            declare
+               Msb : U32 := Acc and 16#800000#;
+            begin
+               if (Ctl and 16#04#) /= 0 then
+                  Msb := Msb xor (Voices (Src).Acc and 16#800000#);
+               end if;
+               Out_V := Shift_Right (Acc, 11) and 16#FFF#;
+               if Msb /= 0 then
+                  Out_V := Out_V xor 16#FFF#;
+               end if;
+            end;
+         when 2 =>
+            Out_V := Saw;
+         when 4 =>
+            Out_V := (if Pulse_High then 16#FFF# else 0);
+         when others =>   --  combined waveforms
+            if Sel >= 4 and then not Pulse_High then
+               Out_V := 0;
+            else
+               Out_V := Combo (Chip, Sel, Natural (Saw));
             end if;
-            T := Shift_Right (Acc, 11) and 16#FFF#;
-            if Msb /= 0 then
-               T := T xor 16#FFF#;
-            end if;
-            Out_V := Out_V and T;
-            Any := True;
-         end;
-      end if;
-      if (Ctl and 16#20#) /= 0 then    --  sawtooth
-         Out_V := Out_V and Shift_Right (Acc, 12);
-         Any := True;
-      end if;
-      if (Ctl and 16#40#) /= 0 then    --  pulse
-         if (Ctl and 16#08#) /= 0
-           or else Shift_Right (Acc, 12) >= Vo.PW
-         then
-            Out_V := Out_V and 16#FFF#;
-         else
-            Out_V := 0;
-         end if;
-         Any := True;
-      end if;
+      end case;
       if (Ctl and 16#80#) /= 0 then    --  noise
          declare
             N : constant U32 := Vo.Noise;
@@ -226,14 +368,20 @@ package body SID is
               Shift_Left (Shift_Right (N, 2) and 1, 4);
          begin
             Out_V := Out_V and NV;
-            Any := True;
          end;
       end if;
+      return (if Any then Out_V else 0);
+   end Wave_Bits;
+
+   function Waveform (I : Natural) return Integer is
+      Any : Boolean;
+      W   : constant U32 := Wave_Bits (I, Any);
+   begin
       if not Any then
          return 0;
       end if;
       --  Centre around zero, scale by envelope (result about +-2048*255)
-      return (Integer (Out_V) - 2048) * Vo.Level;
+      return (Integer (W) - 2048) * Voices (I).Level;
    end Waveform;
 
    procedure Clock_Oscillators (Cycles : Natural) is
@@ -310,18 +458,25 @@ package body SID is
          declare
             Cutoff_Reg : constant Natural :=
               Natural (Regs (16#15#) and 7) + Natural (Regs (16#16#)) * 8;
-            Fc : constant Float := 30.0 + Float (Cutoff_Reg) * 5.8;
-            F  : constant Float :=
-              2.0 * Sin (Ada.Numerics.Pi * Float'Min (Fc, 12_000.0) /
-                         Float (Sample_Rate));
+            F  : constant Float := Cutoff_F (Chip, Cutoff_Reg);
             Res : constant Float := Float (Shift_Right (Filt_Route, 4));
-            Q  : constant Float := 1.0 / (0.707 + Res / 15.0 * 1.5);
-            HP : Float;
+            --  6581: Q 0.707 .. 1.7; the 8580 resonates harder (up to 2.6)
+            Q  : constant Float :=
+              (if Chip = MOS6581 then 1.0 / (0.707 + Res / 15.0)
+               else 2.0 ** ((4.0 - Res) / 8.0));
+            HP : Float := 0.0;
             Sum : Float := 0.0;
          begin
-            HP := Filtered - Filt_LP - Q * Filt_BP;
-            Filt_BP := Filt_BP + F * HP;
-            Filt_LP := Filt_LP + F * Filt_BP;
+            for K in 1 .. Oversample loop
+               HP := Filtered - Filt_LP - Q * Filt_BP;
+               Filt_BP := Filt_BP + F * HP;
+               Filt_LP := Filt_LP + F * Filt_BP;
+            end loop;
+            if Chip = MOS6581 then
+               --  the 6581 filter saturates on loud input
+               Filt_BP := Filt_BP / (1.0 + 0.05 * abs Filt_BP);
+               Filt_LP := Filt_LP / (1.0 + 0.05 * abs Filt_LP);
+            end if;
             if (Mode_Vol and 16#10#) /= 0 then Sum := Sum + Filt_LP; end if;
             if (Mode_Vol and 16#20#) /= 0 then Sum := Sum + Filt_BP; end if;
             if (Mode_Vol and 16#40#) /= 0 then Sum := Sum + HP; end if;
@@ -332,7 +487,9 @@ package body SID is
       end if;
 
       --  Volume register DC offset makes "digi" playback audible
-      Out_F := Direct * Volume * 0.3 + Volume * 0.15;
+      --  (large on the 6581, almost none on the 8580)
+      Out_F := Direct * Volume * 0.3 +
+        Volume * (if Chip = MOS6581 then 0.15 else 0.02);
 
       --  DC blocker
       declare
@@ -403,4 +560,6 @@ package body SID is
       Byte'Read (S, Last_Write);
    end Load_State;
 
+begin
+   Build_Tables;
 end SID;

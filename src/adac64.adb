@@ -9,6 +9,7 @@
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --list-joysticks   list host game controllers and exit
 --    --pal / --ntsc     video standard (default: last used / PAL)
+--    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
 --    --attach FILE      attach a disk image without autostarting
@@ -50,6 +51,7 @@ procedure AdaC64 is
    Model_Given, Key80_Given, REU_Given : Boolean := False;
    Drive_Kind : Unbounded_String;
    Std_Given : Boolean := False;
+   SID_Given : Boolean := False;
    ROM_Dir  : Unbounded_String := To_Unbounded_String ("/usr/share/vice");
    Headless : Natural := 0;
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
@@ -132,6 +134,11 @@ begin
          elsif A = "--ntsc" then
             Machine.Set_Video_Standard (Machine.NTSC);
             Std_Given := True;
+         elsif A = "--sid" and then I < Argument_Count then
+            I := I + 1;
+            SID.Set_Model (if Argument (I) = "8580" then SID.MOS8580
+                           else SID.MOS6581);
+            SID_Given := True;
          elsif A = "--pal" then
             Machine.Set_Video_Standard (Machine.PAL);
             Std_Given := True;
@@ -196,6 +203,7 @@ begin
    if Headless = 0 then
       GUI.Drive_Choice := Drive_Kind;
       GUI.Standard_Given := Std_Given;
+      GUI.SID_Given := SID_Given;
       GUI.Run (Model, To_String (ROM_Dir), To_String (File),
                Model_Given, Key80_Given, REU_Given);
       return;
