@@ -972,6 +972,12 @@ package body Machine is
          elsif LA = 16#0801# or else LA = 0 then
             Cmd := To_Unbounded_String ("LOAD""*"",8,1" & ASCII.LF & "RUN"
                                         & ASCII.LF);
+         elsif LA >= 16#2000# and then Media.Start_Program_Name /= "" then
+            --  First file looks like data (e.g. a game part loaded high):
+            --  start the first BASIC program on the disk instead.
+            Cmd := To_Unbounded_String
+              ("LOAD""" & Media.Start_Program_Name & """,8" & ASCII.LF &
+               "RUN" & ASCII.LF);
          else
             Cmd := To_Unbounded_String ("LOAD""*"",8,1" & ASCII.LF & "SYS" &
                                         Natural'Image (Natural (LA)) &

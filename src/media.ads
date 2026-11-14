@@ -36,6 +36,9 @@ package Media is
    --  Write the (modified) attached image back to its file.
 
    function First_Load_Address return Word;
+
+   function Start_Program_Name return String;
+   --  D64 only: name of the first PRG that loads at $0801, or "".
    --  Load address of the first file on the attached medium (0 if none).
 
 end Media;

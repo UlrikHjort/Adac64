@@ -699,6 +699,38 @@ package body Media is
          Ok := False;
    end Save_File;
 
+   function Start_Program_Name return String is
+      Result : Unbounded_String;
+      Found  : Boolean := False;
+
+      procedure Visit (File_Type : Byte; Track, Sector : Natural;
+                       Name : Byte_Array; Blocks : Natural;
+                       Stop : in out Boolean) is
+         pragma Unreferenced (Blocks);
+         Off : constant Integer := Sector_Offset (Track, Sector);
+      begin
+         if (File_Type and 7) = 2 and then Off >= 0
+           and then Image (Off + 2) = 16#01# and then Image (Off + 3) = 16#08#
+         then
+            for B of Name loop
+               Append (Result,
+                       (if B in 16#20# .. 16#5F# and then B /= 16#22#
+                        then Character'Val (B) else '?'));
+            end loop;
+            Found := True;
+            Stop := True;
+         end if;
+      end Visit;
+   begin
+      if Image_Kind /= D64 then
+         return "";
+      end if;
+      Walk_Directory (Visit'Unrestricted_Access);
+      return (if Found then To_String (Result) else "");
+   exception
+      when others => return "";
+   end Start_Program_Name;
+
    function First_Load_Address return Word is
       Data : Byte_Array_Access;
       Found : Boolean;
