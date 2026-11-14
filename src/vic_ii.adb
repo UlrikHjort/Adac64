@@ -82,131 +82,155 @@ package body VIC_II is
    --  Line rendering
    ---------------------------------------------------------------------
 
-   procedure Draw_Graphics is
+   ---------------------------------------------------------------------
+   --  Progressive pixel output
+   --
+   --  Pixels are produced as emulated time passes (8 per cycle) using the
+   --  register values of that moment, so mid-line changes of colours,
+   --  modes, scrolling and the border flip-flop show up where they happen.
+   --  Framebuffer x = 8 * Line_Cycle - 100 (display window starts at 32).
+   ---------------------------------------------------------------------
+
+   Line_Border : array (Line_X) of Boolean := (others => True);
+   Border_Col  : array (Line_X) of Byte := (others => 0);
+   Rendered    : Natural := 0;          --  next framebuffer x to produce
+   Main_Border : Boolean := True;       --  main border flip-flop
+   G_Cache     : array (0 .. 39) of Byte := (others => 0);
+   G_Valid     : array (0 .. 39) of Boolean := (others => False);
+
+   function Visible_Line return Boolean is
+     (Raster >= First_Visible_Line
+      and then Raster < First_Visible_Line + VIC_Height);
+
+   function Fetch_G (I : Natural) return Byte is
       D011 : constant Byte := Regs (16#11#);
-      D016 : constant Byte := Regs (16#16#);
-      D018 : constant Byte := Regs (16#18#);
       ECM  : constant Boolean := Bit (D011, 6);
       BMM  : constant Boolean := Bit (D011, 5);
-      MCM  : constant Boolean := Bit (D016, 4);
-      XScroll : constant Natural := Natural (D016 and 7);
-      Char_Base : constant Word := Word (D018 and 16#0E#) * 1024;
-      Bmp_Base  : constant Word := Word (D018 and 16#08#) * 1024;
-      BG : constant array (0 .. 3) of Byte :=
-        (Regs (16#21#) and 15, Regs (16#22#) and 15,
-         Regs (16#23#) and 15, Regs (16#24#) and 15);
-      Invalid : constant Boolean := ECM and then (BMM or else MCM);
-      X0 : Natural;
-      G, C, Col : Byte;
-      Px : Natural;
-
-      procedure Put (X : Natural; Color : Byte; FG : Boolean) is
-      begin
-         if X <= Line_X'Last then
-            Line_Col (X) := (if Invalid then 0 else Color);
-            Line_FG (X) := FG;
-         end if;
-      end Put;
-      pragma Inline (Put);
+      D018 : constant Byte := Regs (16#18#);
    begin
-      for I in 0 .. 39 loop
+      if not G_Valid (I) then
          if Display_State then
-            C := VM_Buf (I);
-            Col := Col_Buf (I);
             if BMM then
-               G := Mem_Read
-                 (Bmp_Base + Word (((VC + I) * 8 + RC) mod 8192));
+               G_Cache (I) := Mem_Read
+                 (Word (D018 and 16#08#) * 1024 +
+                  Word (((VC + I) * 8 + RC) mod 8192));
             else
                declare
+                  C : constant Byte := VM_Buf (I);
                   Code : constant Byte := (if ECM then C and 16#3F# else C);
                begin
-                  G := Mem_Read (Char_Base + Word (Code) * 8 + Word (RC));
+                  G_Cache (I) := Mem_Read
+                    (Word (D018 and 16#0E#) * 1024 + Word (Code) * 8 +
+                     Word (RC));
                end;
             end if;
          else
-            C := 0;
-            Col := 0;
-            G := Mem_Read (if ECM then 16#39FF# else 16#3FFF#);
+            G_Cache (I) := Mem_Read (if ECM then 16#39FF# else 16#3FFF#);
          end if;
+         G_Valid (I) := True;
+      end if;
+      return G_Cache (I);
+   end Fetch_G;
 
-         X0 := 32 + XScroll + I * 8;
+   procedure Graphics_Pixel (X : Line_X) is
+      D011 : constant Byte := Regs (16#11#);
+      D016 : constant Byte := Regs (16#16#);
+      ECM  : constant Boolean := Bit (D011, 6);
+      BMM  : constant Boolean := Bit (D011, 5);
+      MCM  : constant Boolean := Bit (D016, 4);
+      Px   : constant Integer := X - 32 - Integer (D016 and 7);
+      BG0  : constant Byte := Regs (16#21#) and 15;
+      I, B : Natural;
+      G, C, Col : Byte;
+      Color : Byte;
+      FG : Boolean;
+      Bits : Natural;
+   begin
+      if Px < 0 or else Px >= 320 then
+         Line_Col (X) := BG0;
+         Line_FG (X) := False;
+         return;
+      end if;
+      I := Px / 8;
+      B := Px mod 8;
+      G := Fetch_G (I);
+      if Display_State then
+         C := VM_Buf (I);
+         Col := Col_Buf (I);
+      else
+         C := 0;
+         Col := 0;
+      end if;
 
-         if not BMM and then not ECM and then not (MCM and then Bit (Col, 3))
-         then
-            --  Standard text (or hires char in MC mode)
-            declare
-               FGC : constant Byte := (if MCM then Col and 7 else Col);
-            begin
-               for B in 0 .. 7 loop
-                  Px := X0 + B;
-                  if Bit (G, 7 - B) then
-                     Put (Px, FGC, True);
-                  else
-                     Put (Px, BG (0), False);
-                  end if;
-               end loop;
-            end;
+      if not BMM and then not ECM and then not (MCM and then Bit (Col, 3))
+      then
+         --  Standard text (or hires char in multicolour mode)
+         FG := Bit (G, 7 - B);
+         Color := (if FG then (if MCM then Col and 7 else Col) else BG0);
+      elsif not BMM and then not ECM then
+         --  Multicolour text
+         Bits := Natural (Shift_Right (G, 6 - 2 * (B / 2)) and 3);
+         Color := (case Bits is
+                     when 0 => BG0,
+                     when 1 => Regs (16#22#) and 15,
+                     when 2 => Regs (16#23#) and 15,
+                     when others => Col and 7);
+         FG := Bits >= 2;
+      elsif not BMM then
+         --  ECM text (or invalid ECM + MCM)
+         FG := Bit (G, 7 - B);
+         Color := (if FG then Col
+                   else Regs (16#21# + Natural (Shift_Right (C, 6))) and 15);
+      elsif not MCM then
+         --  Hires bitmap
+         FG := Bit (G, 7 - B);
+         Color := (if FG then Shift_Right (C, 4) else C and 15);
+      else
+         --  Multicolour bitmap
+         Bits := Natural (Shift_Right (G, 6 - 2 * (B / 2)) and 3);
+         Color := (case Bits is
+                     when 0 => BG0,
+                     when 1 => Shift_Right (C, 4),
+                     when 2 => C and 15,
+                     when others => Col);
+         FG := Bits >= 2;
+      end if;
 
-         elsif not BMM and then not ECM then
-            --  Multicolour text
-            for P in 0 .. 3 loop
-               declare
-                  Bits : constant Natural :=
-                    Natural (Shift_Right (G, 6 - 2 * P) and 3);
-                  Color : constant Byte :=
-                    (case Bits is
-                       when 0 => BG (0),
-                       when 1 => BG (1),
-                       when 2 => BG (2),
-                       when others => Col and 7);
-               begin
-                  Put (X0 + 2 * P, Color, Bits >= 2);
-                  Put (X0 + 2 * P + 1, Color, Bits >= 2);
-               end;
-            end loop;
+      if ECM and then (BMM or else MCM) then
+         Color := 0;      --  invalid modes display black
+      end if;
+      Line_Col (X) := Color;
+      Line_FG (X) := FG;
+   end Graphics_Pixel;
 
-         elsif not BMM then
-            --  ECM text (or invalid ECM+MCM)
-            for B in 0 .. 7 loop
-               Px := X0 + B;
-               if Bit (G, 7 - B) then
-                  Put (Px, Col, True);
-               else
-                  Put (Px, BG (Natural (Shift_Right (C, 6))), False);
-               end if;
-            end loop;
-
-         elsif not MCM then
-            --  Hires bitmap
-            for B in 0 .. 7 loop
-               Px := X0 + B;
-               if Bit (G, 7 - B) then
-                  Put (Px, Shift_Right (C, 4), True);
-               else
-                  Put (Px, C and 15, False);
-               end if;
-            end loop;
-
+   procedure Render_Pixels (Upto : Natural) is
+      Last : constant Natural := Natural'Min (Upto, VIC_Width);
+      CSEL : Boolean;
+      SX   : Integer;
+   begin
+      if not Visible_Line then
+         Rendered := Natural'Max (Rendered, Last);
+         return;
+      end if;
+      while Rendered < Last loop
+         CSEL := Bit (Regs (16#16#), 3);
+         SX := Rendered - 8;                --  sprite coordinate
+         if SX = (if CSEL then 344 else 335) then
+            Main_Border := True;
+         elsif SX = (if CSEL then 24 else 31) and then not VBorder then
+            Main_Border := False;
+         end if;
+         Line_Border (Rendered) := Main_Border;
+         Border_Col (Rendered) := Regs (16#20#) and 15;
+         if VBorder then
+            Line_Col (Rendered) := Regs (16#21#) and 15;
+            Line_FG (Rendered) := False;
          else
-            --  Multicolour bitmap
-            for P in 0 .. 3 loop
-               declare
-                  Bits : constant Natural :=
-                    Natural (Shift_Right (G, 6 - 2 * P) and 3);
-                  Color : constant Byte :=
-                    (case Bits is
-                       when 0 => BG (0),
-                       when 1 => Shift_Right (C, 4),
-                       when 2 => C and 15,
-                       when others => Col);
-               begin
-                  Put (X0 + 2 * P, Color, Bits >= 2);
-                  Put (X0 + 2 * P + 1, Color, Bits >= 2);
-               end;
-            end loop;
+            Graphics_Pixel (Rendered);
          end if;
+         Rendered := Rendered + 1;
       end loop;
-   end Draw_Graphics;
+   end Render_Pixels;
 
    procedure Draw_Sprites (Visible : Boolean) is
       Enable : constant Byte := Regs (16#15#);
@@ -301,43 +325,22 @@ package body VIC_II is
    end Draw_Sprites;
 
    procedure Render_Line is
-      Visible : constant Boolean :=
-        Raster >= First_Visible_Line
-        and then Raster < First_Visible_Line + VIC_Height;
-      Border : constant Byte := Regs (16#20#) and 15;
-      CSEL : constant Boolean := Bit (Regs (16#16#), 3);
-      Left  : constant Natural := (if CSEL then 32 else 39);
-      Right : constant Natural := (if CSEL then 352 else 343);
       Y : Natural;
    begin
-      Line_FG := (others => False);
-      Line_Col := (others => Regs (16#21#) and 15);
-
-      if not VBorder then
-         Draw_Graphics;
+      Render_Pixels (VIC_Width);
+      if not Visible_Line then
+         Line_FG := (others => False);
       end if;
-
-      Draw_Sprites (Visible);
-
-      if not Visible then
-         return;
-      end if;
-
-      if VBorder then
-         Line_Col := (others => Border);
-      else
-         for X in 0 .. Left - 1 loop
-            Line_Col (X) := Border;
-         end loop;
-         for X in Right .. Line_X'Last loop
-            Line_Col (X) := Border;
+      Draw_Sprites (Visible_Line);
+      if Visible_Line then
+         Y := Raster - First_Visible_Line;
+         for X in Line_X loop
+            VIC_FB (Y, X) := VIC_Palette
+              (if Line_Border (X) then Border_Col (X) else Line_Col (X));
          end loop;
       end if;
-
-      Y := Raster - First_Visible_Line;
-      for X in Line_X loop
-         VIC_FB (Y, X) := VIC_Palette (Line_Col (X));
-      end loop;
+      Rendered := 0;
+      G_Valid := (others => False);
    end Render_Line;
 
    ---------------------------------------------------------------------
@@ -466,6 +469,11 @@ package body VIC_II is
          if not Badline_Checked and then Line_Cycle >= 12 then
             Badline_Checked := True;
             Check_Bad_Line;
+         end if;
+         if Line_Cycle >= 13 then
+            Render_Pixels
+              (Natural'Min (8 * Natural'Min (Line_Cycle, 63) - 100,
+                            VIC_Width));
          end if;
          exit when Line_Cycle < Cycles_Per_Line;
          End_Line;

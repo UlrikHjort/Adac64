@@ -111,6 +111,13 @@ package body Machine is
 
    function Bus_Read (Addr : Word) return Byte;
    procedure Update_Drive_State;
+   procedure Clock_Devices (N : Natural);
+
+   --  Sub-instruction timing: during CPU.Step, I/O accesses first clock
+   --  the chips up to the cycle on which the access happens (the last
+   --  cycle of the instruction), so writes take effect at the right time.
+   In_Step      : Boolean := False;
+   Instr_Ticked : Natural := 0;    --  cycles already clocked this step
    procedure Bus_Write (Addr : Word; Value : Byte);
    function VIC_Mem (Addr : Word) return Byte;
    function VIC_Color (Index : Natural) return Byte;
@@ -342,14 +349,26 @@ package body Machine is
       end if;
    end CIA1_Port_Read;
 
+   procedure Catch_Up is
+      Target : constant Natural :=
+        (if CPU.Current_Cycles > 0 then CPU.Current_Cycles - 1 else 0);
+   begin
+      if In_Step and then not VIA_Fast and then Target > Instr_Ticked then
+         Clock_Devices (Target - Instr_Ticked);
+         Instr_Ticked := Target;
+      end if;
+   end Catch_Up;
+
    procedure Sync_Drive (Write_Delay : Natural := 0) is
       --  Bring the drive up to the moment of the current bus access
-      --  (approximated as the last cycle of the executing instruction).
+      --  (the last cycle of the executing instruction; the other chips
+      --  have already been clocked there by Catch_Up).
       --  A write by the computer becomes visible to the drive one cycle
       --  later (CIA output, 7406 inverter and VIA input latch), so for
       --  writes the drive is run one cycle further before the change.
-      Offset : Natural := (if CPU.Current_Cycles > 0
-                           then CPU.Current_Cycles - 1 else 0);
+      Offset : Natural := (if CPU.Current_Cycles > Instr_Ticked + 1
+                           then CPU.Current_Cycles - 1 - Instr_Ticked
+                           else 0);
    begin
       if Drive_On then
          if VIA_Fast then
@@ -497,6 +516,7 @@ package body Machine is
    function IO_Read (Addr : Word) return Byte is
       Off : constant Natural := Natural (Addr and 16#FF#);
    begin
+      Catch_Up;
       case Addr is
          when 16#D000# .. 16#D3FF# =>
             return VIC.Read (Natural (Addr and 16#3F#));
@@ -542,6 +562,7 @@ package body Machine is
    procedure IO_Write (Addr : Word; Value : Byte) is
       Off : constant Natural := Natural (Addr and 16#FF#);
    begin
+      Catch_Up;
       case Addr is
          when 16#D000# .. 16#D3FF# =>
             VIC.Write (Natural (Addr and 16#3F#), Value);
@@ -1232,14 +1253,18 @@ package body Machine is
             end if;
             NMI_Prev := NMI_Now;
 
+            Instr_Ticked := 0;
+            In_Step := True;
             CPU.Step (N);
+            In_Step := False;
 
             if VIC.Fast_Mode and then not C64_Mode then
                Dev := (N + Half_Cycle) / 2;
                Half_Cycle := (N + Half_Cycle) mod 2;
             else
-               Dev := N;
+               Dev := (if N > Instr_Ticked then N - Instr_Ticked else 0);
             end if;
+            Instr_Ticked := 0;
             if Dev > 0 then
                Clock_Devices (Dev);
             end if;
