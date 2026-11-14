@@ -15,7 +15,7 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
 Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 (insert without autostart), and for testing `--headless N` (run N frames, save
 `shot.png` / `vdc_shot.png`), `--png FILE`, `--type "TEXT\n"`, `--wav FILE`,
-`--dump FILE` (64 KB memory image).
+`--dump FILE` (64 KB memory + 2 KB drive RAM), `--type-at FRAME TEXT`.
 
 ## What is emulated
 
@@ -31,12 +31,16 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 
 ### Drive 8
 
-**True drive emulation (default for D64 images):** a complete 1541 runs in
-lockstep with the computer: its own 6502 executing the real DOS ROM, 2 KB RAM,
-two 6522 VIAs, the IEC serial bus (ATN/CLK/DATA with hardware ATN
-acknowledge), stepper motor and a rotating GCR disk surface built from the D64.
+**True drive emulation (default for D64 and G64 images):** a complete 1541
+runs in lockstep with the computer: its own 6502 executing the real DOS ROM,
+2 KB RAM, two 6522 VIAs, the IEC serial bus (ATN/CLK/DATA with hardware ATN
+acknowledge), stepper motor with half-tracks and a bit-level rotating disk
+surface (SYNC detection, byte framing, write shift register). D64 images are
+converted to GCR tracks; G64 images (raw tracks, e.g. copy-protected
+originals) are used as captured. Custom fast loaders work.
 Writes (SAVE, scratch, format) are decoded back into the D64 and saved to the
-file; read-only image files appear as write-protected disks. This needs a
+file (G64 tracks are written back in place); read-only image files appear as
+write-protected disks. This needs a
 1541 ROM (16 KB), searched in this order: `--drive-rom FILE`,
 `<roms>/DRIVES/dos1541-325302-01+901229-05.bin`, `<roms>/DRIVES/dos1541`,
 `roms/drives/dos1541.bin` (next to `bin/`), `roms/drives/1541-II.251968-03.bin`.
@@ -82,3 +86,4 @@ Disk images can also be dropped onto the window.
     src/keyboard.*   matrix and host key mapping
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
     tests/           CPU and keyboard tests, mkd64.py image builder
+    tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers
