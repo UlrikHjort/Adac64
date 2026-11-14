@@ -24,6 +24,11 @@ package Keyboard is
 
    Restore_Down : Boolean := False;
 
+   Positional : Boolean := False;
+   --  False: symbolic mapping (type the character you mean).
+   --  True:  positional mapping (PC key positions = C64 key positions,
+   --         shift works like on the C64 keyboard).
+
    procedure Key_Event
      (Keyval  : Interfaces.Unsigned_32;
       Keycode : Natural;

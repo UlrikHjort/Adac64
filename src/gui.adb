@@ -43,12 +43,22 @@ with Audio;
 with SID;
 with Blit;
 with Monitor;
+with Settings;
+use type Keyboard.Joy_Keyset;
+with Gtk.Clipboard;
+with Gdk.Property;
+with Pango.Layout;
 with Host_Joystick;
 with Disasm;
 
 package body GUI is
 
    Win      : Gtk_Window;
+   Bar      : Gtk_Menu_Bar;
+   Is_Fullscreen : Boolean := False;
+   Integer_Scale : Boolean := False;
+   CRT_Filter    : Boolean := False;
+   Last_Dir      : Unbounded_String;
    Area     : Gtk_Drawing_Area;
    Status   : Gtk_Label;
    VIC_Surf : Cairo_Surface;
@@ -98,6 +108,9 @@ package body GUI is
         when C128 => (if Machine.In_C64_Mode then "C128 (C64 mode)"
                       else "C128"));
 
+   function Short (S : String) return String is
+     (if S'Length > 24 then S (S'First .. S'First + 21) & ".." else S);
+
    procedure Update_Status is
       Drive_Str : constant String :=
         (if Machine.Drive_Active then
@@ -126,7 +139,7 @@ package body GUI is
           else "") &
          "  |  joy port" & Keyboard.Joystick_Port'Image &
          (if Host_Joystick.Selected >= 0
-          then " (" & Host_Joystick.Name (Host_Joystick.Selected) & ")"
+          then " (" & Short (Host_Joystick.Name (Host_Joystick.Selected)) & ")"
           else "") &
          "  |  F9 autostart  F10 40/80  F11 warp  F12 reset  Shift+F9/F10 quick save/load");
    end Update_Status;
@@ -250,9 +263,24 @@ package body GUI is
       Filter_All.Add_Pattern ("*");
       Gtk.File_Chooser.Add_Filter (+Dlg, Filter_C64);
       Gtk.File_Chooser.Add_Filter (+Dlg, Filter_All);
+      if Length (Last_Dir) > 0 then
+         declare
+            Ok : constant Boolean :=
+              Gtk.File_Chooser.Set_Current_Folder (+Dlg, To_String (Last_Dir));
+            pragma Unreferenced (Ok);
+         begin
+            null;
+         end;
+      end if;
       if Dlg.Run = Gtk_Response_Accept then
          Result := To_Unbounded_String
            (Gtk.File_Chooser.Get_Filename (+Dlg));
+         begin
+            Last_Dir := To_Unbounded_String
+              (Ada.Directories.Containing_Directory (To_String (Result)));
+         exception
+            when others => null;
+         end;
       end if;
       Dlg.Destroy;
       Keyboard.Release_All;
@@ -392,6 +420,103 @@ package body GUI is
       Keyboard.Release_All;
       Monitor.Open (Win, "stopped");
    end On_Monitor;
+
+   procedure Toggle_Fullscreen is
+   begin
+      Is_Fullscreen := not Is_Fullscreen;
+      if Is_Fullscreen then
+         Bar.Hide;
+         Status.Hide;
+         Win.Fullscreen;
+      else
+         Win.Unfullscreen;
+         Bar.Show;
+         Status.Show;
+      end if;
+   end Toggle_Fullscreen;
+
+   procedure Paste_Text is
+      Clip : constant Gtk.Clipboard.Gtk_Clipboard :=
+        Gtk.Clipboard.Get (Gdk.Property.Atom_Intern ("CLIPBOARD"));
+      Text : constant String := Clip.Wait_For_Text;
+      Clean : Unbounded_String;
+   begin
+      for C of Text loop
+         if C = ASCII.LF or else C in ' ' .. '~' then
+            Append (Clean, C);
+         end if;
+      end loop;
+      if Machine.Z80_Used then
+         Keyboard.Type_Keys (To_String (Clean));     --  CP/M scans the matrix
+      else
+         Machine.Type_Text (To_String (Clean));      --  KERNAL buffer
+      end if;
+   exception
+      when others => null;
+   end Paste_Text;
+
+   procedure On_Fullscreen (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Toggle_Fullscreen;
+   end On_Fullscreen;
+
+   procedure On_Integer_Scale
+     (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      Integer_Scale := Item.Get_Active;
+      Area.Queue_Draw;
+   end On_Integer_Scale;
+
+   procedure On_CRT (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      CRT_Filter := Item.Get_Active;
+      Area.Queue_Draw;
+   end On_CRT;
+
+   procedure On_Positional
+     (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      Keyboard.Positional := Item.Get_Active;
+      Keyboard.Release_All;
+   end On_Positional;
+
+   procedure On_Paste (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Paste_Text;
+   end On_Paste;
+
+   procedure Save_Settings is
+   begin
+      Settings.Set ("model", (if Machine.Model = C128 then "c128" else "c64"));
+      Settings.Set ("key4080", Machine.Key_4080_Down);
+      Settings.Set ("joyport", Integer (Keyboard.Joystick_Port));
+      Settings.Set ("joykeys",
+                    (if Keyboard.Joystick_Keys = Keyboard.Keypad
+                     then "keypad" else "cursor"));
+      Settings.Set ("controller",
+                    (if Host_Joystick.Selected >= 0
+                     then Host_Joystick.Name (Host_Joystick.Selected)
+                     else "none"));
+      Settings.Set ("truedrive", Machine.True_Drive);
+      Settings.Set ("fastload", Machine.Fast_Kernal_Load);
+      Settings.Set ("mute", Audio.Muted);
+      Settings.Set ("positional", Keyboard.Positional);
+      Settings.Set ("integerscale", Integer_Scale);
+      Settings.Set ("crt", CRT_Filter);
+      Settings.Set ("lastdir", To_String (Last_Dir));
+      declare
+         W, H : Gint;
+      begin
+         Win.Get_Size (W, H);
+         if not Is_Fullscreen then
+            Settings.Set ("width", Integer (W));
+            Settings.Set ("height", Integer (H));
+         end if;
+      end;
+      Settings.Save;
+   end Save_Settings;
 
    procedure On_Quit (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
@@ -578,9 +703,11 @@ package body GUI is
       SW : constant Float := Float (Blit.Width (Src));
       SH : constant Float := Float (Blit.Height (Src));
       Y_Aspect : constant Float := (if Show_VDC then 2.0 else 1.0);
-      Scale : constant Float := Float'Min (W / SW, H / (SH * Y_Aspect));
-      OX : constant Float := (W - SW * Scale) / 2.0;
-      OY : constant Float := (H - SH * Scale * Y_Aspect) / 2.0;
+      Fit : constant Float := Float'Min (W / SW, H / (SH * Y_Aspect));
+      Scale : constant Float :=
+        (if Integer_Scale and then Fit >= 1.0 then Float'Floor (Fit) else Fit);
+      OX : constant Float := Float'Floor ((W - SW * Scale) / 2.0);
+      OY : constant Float := Float'Floor ((H - SH * Scale * Y_Aspect) / 2.0);
    begin
       Set_Source_Rgb (Cr, 0.0, 0.0, 0.0);
       Paint (Cr);
@@ -589,6 +716,21 @@ package body GUI is
       Set_Source_Surface (Cr, Surf, 0.0, 0.0);
       Cairo.Pattern.Set_Filter (Get_Source (Cr), Cairo.Pattern.Cairo_Filter_Nearest);
       Paint (Cr);
+      if CRT_Filter and then Scale * Y_Aspect >= 2.0 then
+         --  Darken the lower part of every emulated scanline
+         Cairo.Identity_Matrix (Cr);
+         Set_Source_Rgba (Cr, 0.0, 0.0, 0.0, 0.35);
+         declare
+            LH : constant Float := Scale * Y_Aspect;
+         begin
+            for Y in 0 .. Natural (SH) - 1 loop
+               Rectangle (Cr, Gdouble (OX),
+                          Gdouble (OY + (Float (Y) + 0.55) * LH),
+                          Gdouble (SW * Scale), Gdouble (0.45 * LH));
+            end loop;
+         end;
+         Fill (Cr);
+      end if;
       return True;
    end On_Draw;
 
@@ -599,6 +741,19 @@ package body GUI is
       KV : constant Interfaces.Unsigned_32 :=
         Interfaces.Unsigned_32 (Event.Keyval);
    begin
+      if (Event.State and Gdk.Types.Mod1_Mask) /= 0 and then KV = 16#FF0D# then
+         Keyboard.Release_All;
+         Toggle_Fullscreen;                          --  Alt+Return
+         return True;
+      end if;
+      if (Event.State and Gdk.Types.Control_Mask) /= 0
+        and then (Event.State and Gdk.Types.Shift_Mask) /= 0
+        and then KV in Character'Pos ('V') | Character'Pos ('v')
+      then
+         Keyboard.Release_All;
+         Paste_Text;                                 --  Ctrl+Shift+V
+         return True;
+      end if;
       if (Event.State and Gdk.Types.Shift_Mask) /= 0
         and then KV in 16#FFC6# | 16#FFC7#
       then
@@ -680,6 +835,7 @@ package body GUI is
    procedure On_Destroy (Self : access Gtk_Widget_Record'Class) is
       pragma Unreferenced (Self);
    begin
+      Save_Settings;
       Gtk.Main.Main_Quit;
    end On_Destroy;
 
@@ -847,12 +1003,13 @@ package body GUI is
    end Add_Radio;
 
    procedure Run (Model : Machine.Model_Type; ROM_Dir : String;
-                  File : String) is
+                  File : String;
+                  Model_Given : Boolean := False;
+                  Key80_Given : Boolean := False) is
       VBox : Gtk_Box;
-      Bar  : Gtk_Menu_Bar;
-      M_File, M_Machine, M_Input, M_Help : Gtk_Menu;
-      Mute : Gtk_Check_Menu_Item;
-      pragma Warnings (Off, Mute);
+      M_File, M_Machine, M_Input, M_View, M_Help : Gtk_Menu;
+      Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
+      Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group : Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -861,9 +1018,28 @@ package body GUI is
       ROMs := To_Unbounded_String (ROM_Dir);
       Gtk.Main.Init;
 
+      --  Settings (command-line options take precedence)
+      Settings.Load;
+      if not Model_Given then
+         Start_Model := (if Settings.Get ("model", "c64") = "c128" then C128
+                         else C64);
+      end if;
+      if not Key80_Given then
+         Machine.Key_4080_Down := Settings.Get ("key4080", False);
+      end if;
+      Machine.True_Drive := Settings.Get ("truedrive", Machine.True_Drive);
+      Machine.Fast_Kernal_Load :=
+        Settings.Get ("fastload", Machine.Fast_Kernal_Load);
+      Audio.Muted := Settings.Get ("mute", False);
+      Keyboard.Positional := Settings.Get ("positional", False);
+      Integer_Scale := Settings.Get ("integerscale", False);
+      CRT_Filter := Settings.Get ("crt", False);
+      Last_Dir := To_Unbounded_String (Settings.Get ("lastdir", ""));
+
       Gtk_New (Win);
       Win.Set_Title ("AdaC64");
-      Win.Set_Default_Size (800, 640);
+      Win.Set_Default_Size (Gint (Settings.Get ("width", 800)),
+                            Gint (Settings.Get ("height", 640)));
       Win.On_Destroy (On_Destroy'Access);
       Win.On_Key_Press_Event (On_Key_Press'Access);
       Win.On_Key_Release_Event (On_Key_Release'Access);
@@ -902,6 +1078,7 @@ package body GUI is
       Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
       Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);
       Add_Item (M_Machine, "Mo_nitor (Shift+F12)", On_Monitor'Access);
+      Add_Item (M_Machine, "Paste text (Ctrl+Shift+V)", On_Paste'Access);
       Add_Item (M_Machine, "_Quick save (Shift+F9)", On_Quick_Save'Access);
       Add_Item (M_Machine, "Quick _load (Shift+F10)", On_Quick_Load'Access);
       Add_Separator (M_Machine);
@@ -928,6 +1105,9 @@ package body GUI is
       Add_Radio (M_Input, "Joystick on cursor keys + Right Ctrl",
                  Keyset_Group, Keyset_Cursor, On_Joy'Access);
       Add_Separator (M_Input);
+      Add_Check (M_Input, "Positional keyboard mapping", Item_Pos,
+                 On_Positional'Access);
+      Add_Separator (M_Input);
       Host_Joystick.Scan;
       Add_Radio (M_Input, "No game controller", Host_Group, Host_Items (-1),
                  On_Host_Joy'Access);
@@ -935,6 +1115,11 @@ package body GUI is
          Add_Radio (M_Input, "Controller: " & Host_Joystick.Name (I),
                     Host_Group, Host_Items (I), On_Host_Joy'Access);
       end loop;
+
+      M_View := Add_Menu (Bar, "_View");
+      Add_Item (M_View, "_Fullscreen (Alt+Enter)", On_Fullscreen'Access);
+      Add_Check (M_View, "_Integer scaling", Item_Int, On_Integer_Scale'Access);
+      Add_Check (M_View, "_CRT scanlines", Item_CRT, On_CRT'Access);
 
       M_Help := Add_Menu (Bar, "_Help");
       Add_Item (M_Help, "_Keyboard", On_Keys_Help'Access);
@@ -951,6 +1136,7 @@ package body GUI is
 
       Gtk_New (Status, "");
       Status.Set_Halign (Gtk.Widget.Align_Start);
+      Status.Set_Ellipsize (Pango.Layout.Ellipsize_End);
       Status.Set_Margin_Start (6);
       VBox.Pack_Start (Status, Expand => False, Fill => False, Padding => 2);
 
@@ -968,21 +1154,43 @@ package body GUI is
       Audio.Start;
 
       Updating_Menu := True;
-      Joy_Items (2).Set_Active (True);
-      Keyset_Keypad.Set_Active (True);
       declare
-         Auto : constant Integer := Host_Joystick.Auto_Select;
+         Port : constant Integer := Settings.Get ("joyport", 2);
       begin
-         if Auto >= 0 then
-            Host_Joystick.Open (Auto);
-            Host_Items (Auto).Set_Active (True);
+         Keyboard.Joystick_Port :=
+           (if Port in 0 .. 2 then Keyboard.Joy_Port (Port) else 2);
+         Joy_Items (Keyboard.Joystick_Port).Set_Active (True);
+      end;
+      if Settings.Get ("joykeys", "keypad") = "cursor" then
+         Keyboard.Joystick_Keys := Keyboard.Cursor_Keys;
+         Keyset_Cursor.Set_Active (True);
+      else
+         Keyset_Keypad.Set_Active (True);
+      end if;
+      declare
+         Wanted : constant String := Settings.Get ("controller", "");
+         Dev : Integer :=
+           (if Wanted = "" then Host_Joystick.Auto_Select
+            elsif Wanted = "none" then -1
+            else Host_Joystick.Find (Wanted));
+      begin
+         if Wanted /= "" and then Wanted /= "none" and then Dev < 0 then
+            Dev := Host_Joystick.Auto_Select;   --  saved device unplugged
+         end if;
+         if Dev >= 0 then
+            Host_Joystick.Open (Dev);
+            Host_Items (Dev).Set_Active (True);
          else
             Host_Items (-1).Set_Active (True);
          end if;
       end;
+      Mute.Set_Active (Audio.Muted);
+      Item_Pos.Set_Active (Keyboard.Positional);
+      Item_Int.Set_Active (Integer_Scale);
+      Item_CRT.Set_Active (CRT_Filter);
       Updating_Menu := False;
 
-      Start_Machine (Model);
+      Start_Machine (Start_Model);
       if File /= "" then
          Do_Autostart (File);
       end if;

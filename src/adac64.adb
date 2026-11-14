@@ -1,8 +1,8 @@
 --  AdaC64 - a Commodore 64 / 128 emulator written in Ada with GtkAda.
 --
 --  Usage: adac64 [options] [file.d64|file.t64|file.prg]
---    --c128             start as a Commodore 128
---    --80               C128: boot with 40/80 key down (80 columns)
+--    --c64 / --c128     start as a Commodore 64 / 128 (default: last used)
+--    --80 / --40        C128: 40/80 key down (80 columns) / up
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
@@ -42,6 +42,7 @@ procedure AdaC64 is
    end Print_Line;
    subtype Machine_Word is Types.Word;
    Model    : Machine.Model_Type := Machine.C64;
+   Model_Given, Key80_Given : Boolean := False;
    ROM_Dir  : Unbounded_String := To_Unbounded_String ("/usr/share/vice");
    Headless : Natural := 0;
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
@@ -83,8 +84,16 @@ begin
       begin
          if A = "--c128" then
             Model := Machine.C128;
+            Model_Given := True;
+         elsif A = "--c64" then
+            Model := Machine.C64;
+            Model_Given := True;
          elsif A = "--80" then
             Machine.Key_4080_Down := True;
+            Key80_Given := True;
+         elsif A = "--40" then
+            Machine.Key_4080_Down := False;
+            Key80_Given := True;
          elsif A = "--roms" and then I < Argument_Count then
             I := I + 1;
             ROM_Dir := To_Unbounded_String (Argument (I));
@@ -165,7 +174,8 @@ begin
    end loop;
 
    if Headless = 0 then
-      GUI.Run (Model, To_String (ROM_Dir), To_String (File));
+      GUI.Run (Model, To_String (ROM_Dir), To_String (File),
+               Model_Given, Key80_Given);
       return;
    end if;
 

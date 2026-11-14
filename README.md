@@ -112,15 +112,27 @@ up when a breakpoint is hit. Numbers are hex (`$` optional):
 
 ## Keys
 
-Keyboard mapping is symbolic: type the character you want.
+Keyboard mapping is symbolic by default: type the character you want.
+Input → Positional keyboard mapping uses PC key positions instead (like the
+C64 keyboard: e.g. Shift+2 gives `"`, `[` / `]` are `@` / `*`, Delete is ↑),
+which suits games and CP/M.
 Esc = RUN/STOP, PgUp = RESTORE, Left Alt = C=, Home = CLR/HOME, Insert = INST,
 `\` = £, `_` = ←, `^` = ↑, PgDn = HELP (C128), Pause = ESC (C128), Tab = TAB (C128).
 
-Joystick (port 2 by default, changeable in the Input menu): keypad 8/2/4/6 with
-diagonals, fire = keypad 0/5/Enter or Right Ctrl; alternatively the cursor keys.
+Joystick (port 2 by default, changeable in the Input menu): a USB joystick or
+gamepad (`/dev/input/jsN`, chosen in the Input menu; the first non-wheel
+controller is used by default), and/or keypad 8/2/4/6 with diagonals, fire =
+keypad 0/5/Enter or Right Ctrl; alternatively the cursor keys.
+`bin/adac64 --list-joysticks` shows the controllers found.
 
 F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 reset,
-Shift+F9 quick save, Shift+F10 quick load, Shift+F12 monitor.
+Shift+F9 quick save, Shift+F10 quick load, Shift+F12 monitor,
+Alt+Enter fullscreen, Ctrl+Shift+V paste text (typed into the machine).
+View menu: fullscreen, integer scaling, CRT scanlines.
+
+Settings (machine, 40/80 key, joystick, controller, drive options, display,
+keyboard mode, last directory, window size) are saved in
+`~/.config/adac64/settings`; command-line options override them.
 Disk images can also be dropped onto the window.
 
 ## Source layout

@@ -304,6 +304,72 @@ package body Keyboard is
 
    Host_Bits : Byte := 0;
 
+   --  Positional mapping by X11 hardware keycode (evdev code + 8) for the
+   --  main key block; other keys use the symbolic mapping.
+   function Positional_Map (Code : Natural) return Mapping is
+      function P (C : Column; R : Row) return Mapping is (Key ((C, R)));
+   begin
+      case Code is
+         when 49 => return P (7, 1);                 --  `  -> left arrow
+         when 10 => return P (7, 0);                 --  1
+         when 11 => return P (7, 3);                 --  2
+         when 12 => return P (1, 0);                 --  3
+         when 13 => return P (1, 3);                 --  4
+         when 14 => return P (2, 0);                 --  5
+         when 15 => return P (2, 3);                 --  6
+         when 16 => return P (3, 0);                 --  7
+         when 17 => return P (3, 3);                 --  8
+         when 18 => return P (4, 0);                 --  9
+         when 19 => return P (4, 3);                 --  0
+         when 20 => return P (5, 0);                 --  -  -> +
+         when 21 => return P (5, 3);                 --  =  -> -
+         when 22 => return P (0, 0);                 --  Backspace -> DEL
+         when 23 => return P (7, 2);                 --  Tab -> CTRL
+         when 24 => return P (7, 6);                 --  q
+         when 25 => return P (1, 1);                 --  w
+         when 26 => return P (1, 6);                 --  e
+         when 27 => return P (2, 1);                 --  r
+         when 28 => return P (2, 6);                 --  t
+         when 29 => return P (3, 1);                 --  y
+         when 30 => return P (3, 6);                 --  u
+         when 31 => return P (4, 1);                 --  i
+         when 32 => return P (4, 6);                 --  o
+         when 33 => return P (5, 1);                 --  p
+         when 34 => return P (5, 6);                 --  [  -> @
+         when 35 => return P (6, 1);                 --  ]  -> *
+         when 36 => return P (0, 1);                 --  Return
+         when 37 => return P (7, 5);                 --  Ctrl_L -> C=
+         when 38 => return P (1, 2);                 --  a
+         when 39 => return P (1, 5);                 --  s
+         when 40 => return P (2, 2);                 --  d
+         when 41 => return P (2, 5);                 --  f
+         when 42 => return P (3, 2);                 --  g
+         when 43 => return P (3, 5);                 --  h
+         when 44 => return P (4, 2);                 --  j
+         when 45 => return P (4, 5);                 --  k
+         when 46 => return P (5, 2);                 --  l
+         when 47 => return P (5, 5);                 --  ;  -> :
+         when 48 => return P (6, 2);                 --  '  -> ;
+         when 51 => return P (6, 5);                 --  \ -> =
+         when 94 => return P (6, 0);                 --  <> -> pound
+         when 119 => return P (6, 6);                --  Delete -> up arrow
+         when 50 => return P (1, 7);                 --  Shift_L
+         when 52 => return P (1, 4);                 --  z
+         when 53 => return P (2, 7);                 --  x
+         when 54 => return P (2, 4);                 --  c
+         when 55 => return P (3, 7);                 --  v
+         when 56 => return P (3, 4);                 --  b
+         when 57 => return P (4, 7);                 --  n
+         when 58 => return P (4, 4);                 --  m
+         when 59 => return P (5, 7);                 --  ,
+         when 60 => return P (5, 4);                 --  .
+         when 61 => return P (6, 7);                 --  /
+         when 62 => return P (6, 4);                 --  Shift_R
+         when 65 => return P (7, 4);                 --  space
+         when others => return No_Map;
+      end case;
+   end Positional_Map;
+
    procedure Rebuild is
       Force_S, Force_NS : Boolean := False;
       J : Byte := Host_Bits;
@@ -364,7 +430,11 @@ package body Keyboard is
    begin
       if Pressed then
          declare
-            M : constant Mapping := Map_Key (Keyval);
+            J : constant Mapping := Joystick_Mapping (Keyval);
+            PM : constant Mapping :=
+              (if Positional and then not J.Valid
+               then Positional_Map (Keycode) else No_Map);
+            M : constant Mapping := (if PM.Valid then PM else Map_Key (Keyval));
          begin
             if M.Valid then
                Active (Code) := M;
