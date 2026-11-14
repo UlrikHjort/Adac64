@@ -3,6 +3,11 @@ with Interfaces; use Interfaces;
 package body MOS6502 is
    pragma Suppress (All_Checks);
 
+   --  The 6502 polls IRQ using the I flag as it was before the last
+   --  instruction for CLI, SEI and PLP (so an IRQ pending at CLI is taken
+   --  one instruction later, and one can still occur right after SEI).
+   Poll_I : Boolean := True;
+
    type Mnemonic is
      (ADC, AND_Op, ASL, BCC, BCS, BEQ, BIT_Op, BMI, BNE, BPL, BRK, BVC, BVS,
       CLC, CLD, CLI, CLV, CMP, CPX, CPY, DEC, DEX, DEY, EOR, INC, INX, INY,
@@ -260,6 +265,7 @@ package body MOS6502 is
       Flag_D := False;
       Jammed := False;
       NMI_Pending := False;
+      Poll_I := True;
       PC := Make_Word (Read (16#FFFC#), Read (16#FFFD#));
    end Reset;
 
@@ -382,6 +388,7 @@ package body MOS6502 is
 
    procedure Step (Cycles : out Natural) is
       Op    : Byte;
+      Old_I : constant Boolean := Flag_I;
       M     : Mode;
       EA    : Word := 0;
       Cross : Boolean := False;
@@ -392,10 +399,12 @@ package body MOS6502 is
          NMI_Pending := False;
          Jammed := False;
          Interrupt (16#FFFA#, Brk => False);
+         Poll_I := True;
          Cycles := 7;
          return;
-      elsif IRQ_Line and then not Flag_I then
+      elsif IRQ_Line and then not Poll_I then
          Interrupt (16#FFFE#, Brk => False);
+         Poll_I := True;
          Cycles := 7;
          return;
       end if;
@@ -697,6 +706,7 @@ package body MOS6502 is
       end case;
 
       Cycles := Cycles_Base (Op) + Extra;
+      Poll_I := (if Op in 16#58# | 16#78# | 16#28# then Old_I else Flag_I);
    end Step;
 
 begin

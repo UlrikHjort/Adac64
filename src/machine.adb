@@ -14,6 +14,7 @@ with Media;
 with Disasm;
 with CRT;
 with REU;
+with Tape;
 use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
@@ -115,8 +116,10 @@ package body Machine is
 
    --  Typing / autostart
    Type_Queue : Unbounded_String;
-   type Auto_State is (Idle, Wait_Ready, Wait_Load, Wait_Check, Wait_Boot);
+   type Auto_State is
+     (Idle, Wait_Ready, Wait_Load, Wait_Check, Wait_Boot, Wait_Tape);
    Quiet_Frames : Natural := 0;
+   Tape_Autostart : Boolean := False;
    Auto_Path : Unbounded_String;
    Fast_Frames : Natural := 0;
    Auto : Auto_State := Idle;
@@ -714,8 +717,10 @@ package body Machine is
    ---------------------------------------------------------------------
 
    function Port_Read return Byte is
+      --  Bit 4: cassette sense (0 = PLAY pressed); C128 bit 6: CAPS key
       Input : constant Byte :=
-        (if Current_Model = C128 then 16#57# else 16#17#);
+        (if Current_Model = C128 then 16#47# else 16#07#) or
+        (if Tape.Playing then 0 else 16#10#);
    begin
       return (Port_Data and Port_DDR) or (Input and not Port_DDR);
    end Port_Read;
@@ -749,6 +754,9 @@ package body Machine is
          else
             Port_Data := Value;
          end if;
+         --  Bit 5 drives the cassette motor (active low)
+         Tape.Motor := (Port_DDR and 16#20#) /= 0
+           and then (Port_Data and 16#20#) = 0;
          --  The CPU still writes the underlying RAM
          Mem (Write_Map (0) + Natural (Addr)) := Value;
          Rebuild_Map;
@@ -1002,7 +1010,9 @@ package body Machine is
       " irq=" & IRQ_Count'Image & " jam=" & CPU.Jammed'Image &
       " drivePC=" & Drive1541.Get_PC'Image &
       " cia2 mask=" & CIA2.ICR_Mask'Image & " flags=" & CIA2.ICR_Flags'Image &
-      " fast serial in/out=" & Fast_In_Count'Image & Fast_Out_Count'Image);
+      " fast serial in/out=" & Fast_In_Count'Image & Fast_Out_Count'Image &
+      (if Tape.Present then " tape" & Tape.Counter'Image & "% motor=" &
+         Tape.Motor'Image & " play=" & Tape.Playing'Image else ""));
 
    function Drive_Peek (Addr : Natural) return Byte is
      (Drive1541.Peek_RAM (Addr));
@@ -1356,6 +1366,24 @@ package body Machine is
    procedure Autostart (Path : String; Ok : out Boolean) is
    begin
       if Path'Length > 4 and then
+        (Path (Path'Last - 3 .. Path'Last) = ".tap"
+         or else Path (Path'Last - 3 .. Path'Last) = ".TAP")
+      then
+         Tape.Attach (Path, Ok);
+         if Ok then
+            Reset;
+            Tape.Rewind;
+            Tape.Play;
+            Type_Queue := Null_Unbounded_String;
+            Auto_Command := To_Unbounded_String
+              ("LOAD" & ASCII.LF & "RUN" & ASCII.LF);
+            Auto := Wait_Ready;
+            Tape_Autostart := True;
+            Auto_Frames := 0;
+         end if;
+         return;
+      end if;
+      if Path'Length > 4 and then
         (Path (Path'Last - 3 .. Path'Last) = ".crt"
          or else Path (Path'Last - 3 .. Path'Last) = ".CRT")
       then
@@ -1417,7 +1445,7 @@ package body Machine is
    end Autostart;
 
    function Autostart_Busy return Boolean is
-     (Auto in Wait_Ready | Wait_Load | Wait_Boot);
+     (Auto in Wait_Ready | Wait_Load | Wait_Boot | Wait_Tape);
 
    procedure Autostart_Step is
    begin
@@ -1438,10 +1466,21 @@ package body Machine is
               or else Auto_Frames > 600
             then
                Fast_Frames := 0;
-               Auto := (if Current_Model = C128 and then not C64_Mode
+               Auto := (if Tape_Autostart then Wait_Tape
+                        elsif Current_Model = C128 and then not C64_Mode
                           and then not Key_4080_Down
                         then Wait_Check else Idle);
+               Quiet_Frames := 0;
                Auto_Frames := 0;
+            end if;
+         when Wait_Tape =>
+            --  Warp while the tape runs (turbo loaders keep the motor on)
+            Auto_Frames := Auto_Frames + 1;
+            Quiet_Frames := (if Tape.Motor and then Tape.Playing then 0
+                             else Quiet_Frames + 1);
+            if Quiet_Frames > 250 or else Auto_Frames > 200_000 then
+               Auto := Idle;
+               Tape_Autostart := False;
             end if;
          when Wait_Boot =>
             Auto_Frames := Auto_Frames + 1;
@@ -1479,7 +1518,7 @@ package body Machine is
    --  Snapshots
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP5";
+   Snapshot_Magic : constant String := "ADAC64SNAP6";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;
@@ -1523,6 +1562,7 @@ package body Machine is
       Natural'Write (S, Z80_Half);
       ZCPU.Save_State (S);
       REU.Save_State (S);
+      Tape.Save_State (S);
       VIC.Save_State (S);
       SID.Save_State (S);
       VDC.Save_State (S);
@@ -1601,6 +1641,7 @@ package body Machine is
       Natural'Read (S, Z80_Half);
       ZCPU.Load_State (S);
       REU.Load_State (S);
+      Tape.Load_State (S);
       VIC.Load_State (S);
       SID.Load_State (S);
       VDC.Load_State (S);
@@ -1627,8 +1668,15 @@ package body Machine is
    ---------------------------------------------------------------------
 
    procedure Clock_Devices (N : Natural) is
+      Pulses : Natural;
    begin
       Total_Cycles := Total_Cycles + Long_Long_Integer (N);
+      if Tape.Present then
+         Tape.Tick (N, Pulses);
+         if Pulses > 0 then
+            CIA.Set_Flag (CIA1, 16#10#);    --  read pulse on FLAG
+         end if;
+      end if;
       VIC.Tick (N);
       CIA.Tick (CIA1, N);
       CIA.Tick (CIA2, N);

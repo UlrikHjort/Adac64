@@ -80,6 +80,14 @@ emulated 1541. Custom loaders, drive code and SAVE always use the real drive.
 T64 and PRG images. With no image attached, drive 8 is always the current host
 directory (`NAME.prg`), and `SAVE"NAME",8` writes `NAME.prg` there.
 
+### Tape
+
+`.tap` images (File → Insert tape, or autostart/drop the file): a Datasette
+with pulse-accurate playback into CIA1's FLAG input, motor control and PLAY
+sense through the CPU port, so the KERNAL tape routines and turbo tape
+loaders work. Autostart types `LOAD` + `RUN` and warps while the motor runs.
+T64 files are still loaded instantly through the KERNAL trap.
+
 ### Cartridges
 
 `.crt` files (File → Insert cartridge, or pass/drop the file to autostart):
@@ -160,6 +168,7 @@ Disk images can also be dropped onto the window.
     src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop
     src/crt.*        CRT cartridge files
     src/reu.*        RAM Expansion Unit
+    src/tape.*       Datasette / TAP images
     src/media.*      D64/T64/PRG images, fast-load traps, host directory
     src/drive1541.*  1541/1571 drive: CPU, VIAs, CIA, WD1770, GCR surface
     src/via.*        6522 VIA       src/iec.ads    serial bus lines
@@ -168,4 +177,5 @@ Disk images can also be dropped onto the window.
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
     tests/           CPU and keyboard tests, mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
-                     mkd71.py double-sided image builder
+                     mkd71.py double-sided image builder, mktap.py
+                     KERNAL-format TAP encoder

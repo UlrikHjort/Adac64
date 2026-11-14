@@ -44,6 +44,7 @@ with SID;
 with Blit;
 with Monitor;
 with Settings;
+with Tape;
 with Drive1541;
 use type Drive1541.Drive_Model;
 with REU;
@@ -135,6 +136,10 @@ package body GUI is
          (if Warp then " (warp)" else "") &
          (if Paused then "  |  PAUSED" else "") &
          "  |  " & Media_Str &
+         (if Tape.Present then
+             "  |  tape" & Tape.Counter'Image & "%" &
+             (if Tape.Motor and then Tape.Playing then " >" else "")
+          else "") &
          (if Machine.Cartridge_Name /= "" then
              "  |  cart: " & Ada.Strings.Fixed.Trim
                (Machine.Cartridge_Name, Ada.Strings.Right)
@@ -181,8 +186,9 @@ package body GUI is
       Keyboard.Release_All;
    end Start_Machine;
 
-   type Ext_List is array (1 .. 4) of String (1 .. 3);
-   Extensions : constant Ext_List := ("d64", "t64", "prg", "crt");
+   type Ext_List is array (1 .. 7) of String (1 .. 3);
+   Extensions : constant Ext_List :=
+     ("d64", "d71", "g64", "t64", "tap", "prg", "crt");
 
    function Choose_Save_File (Title : String) return String is
       Dlg : Gtk_File_Chooser_Dialog;
@@ -258,7 +264,7 @@ package body GUI is
       W := Dlg.Add_Button ("_Cancel", Gtk_Response_Cancel);
       W := Dlg.Add_Button ("_Open", Gtk_Response_Accept);
       Gtk_New (Filter_C64);
-      Filter_C64.Set_Name ("C64 files (d64, t64, prg, crt)");
+      Filter_C64.Set_Name ("C64 files (d64, d71, g64, t64, tap, prg, crt)");
       for Ext of Extensions loop
          Filter_C64.Add_Pattern ("*." & Ext);
          Filter_C64.Add_Pattern ("*." & Ada.Characters.Handling.To_Upper (Ext));
@@ -567,6 +573,38 @@ package body GUI is
       end;
       Settings.Save;
    end Save_Settings;
+
+   procedure On_Attach_Tape (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+      Path : constant String := Choose_File ("Insert tape (.tap)");
+      Ok : Boolean;
+   begin
+      if Path /= "" then
+         Tape.Attach (Path, Ok);
+         if not Ok then
+            Message ("Not a TAP image: " & Path);
+         end if;
+         Update_Status;
+      end if;
+   end On_Attach_Tape;
+
+   procedure On_Tape_Play (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Tape.Play;
+   end On_Tape_Play;
+
+   procedure On_Tape_Stop (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Tape.Stop;
+   end On_Tape_Stop;
+
+   procedure On_Tape_Rewind (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Tape.Rewind;
+   end On_Tape_Rewind;
 
    procedure On_Quit (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
@@ -1109,6 +1147,11 @@ package body GUI is
       Add_Item (M_File, "Attach image to _drive 8...", On_Attach'Access);
       Add_Item (M_File, "D_etach image (use host directory)",
                 On_Detach'Access);
+      Add_Separator (M_File);
+      Add_Item (M_File, "Insert _tape (.tap)...", On_Attach_Tape'Access);
+      Add_Item (M_File, "Tape: play", On_Tape_Play'Access);
+      Add_Item (M_File, "Tape: stop", On_Tape_Stop'Access);
+      Add_Item (M_File, "Tape: rewind", On_Tape_Rewind'Access);
       Add_Separator (M_File);
       Add_Item (M_File, "Insert _cartridge...", On_Attach_Cart'Access);
       Add_Item (M_File, "Remove cartridge", On_Detach_Cart'Access);
