@@ -42,12 +42,17 @@ package Keyboard is
 
    procedure Press (Col : Column; R : Row; Down : Boolean);
 
+   procedure Set_Host_Joystick (Bits : Byte);
+   --  State of a host game controller (same bit layout as Joy1/Joy2); it
+   --  is combined with the keyboard joystick keys.
+
+   function Host_Joystick_Bits return Byte;
+
    procedure Type_Keys (S : String);
    --  Queue text to be typed through the keyboard matrix (works for
    --  programs that scan the keyboard themselves, e.g. CP/M); LF = RETURN.
 
    procedure Tick_Typing;
    --  Advance matrix typing; call once per frame.
-   --  Direct matrix manipulation.
 
 end Keyboard;

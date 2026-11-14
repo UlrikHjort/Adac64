@@ -43,6 +43,7 @@ with Audio;
 with SID;
 with Blit;
 with Monitor;
+with Host_Joystick;
 with Disasm;
 
 package body GUI is
@@ -124,6 +125,9 @@ package body GUI is
              (if Show_VDC then "  |  80 col" else "  |  40 col")
           else "") &
          "  |  joy port" & Keyboard.Joystick_Port'Image &
+         (if Host_Joystick.Selected >= 0
+          then " (" & Host_Joystick.Name (Host_Joystick.Selected) & ")"
+          else "") &
          "  |  F9 autostart  F10 40/80  F11 warp  F12 reset  Shift+F9/F10 quick save/load");
    end Update_Status;
 
@@ -475,6 +479,27 @@ package body GUI is
    end On_Mute;
 
    Joy_Items : array (Keyboard.Joy_Port) of Gtk_Radio_Menu_Item;
+   Host_Items : array (-1 .. Host_Joystick.Max_Devices - 1)
+     of Gtk_Radio_Menu_Item;
+
+   procedure On_Host_Joy (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      for I in Host_Items'Range loop
+         if Host_Items (I) /= null
+           and then Gtk_Radio_Menu_Item (Item) = Host_Items (I)
+         then
+            if I < 0 then
+               Host_Joystick.Close;
+            else
+               Host_Joystick.Open (I);
+            end if;
+         end if;
+      end loop;
+      Update_Status;
+   end On_Host_Joy;
    Keyset_Keypad, Keyset_Cursor : Gtk_Radio_Menu_Item;
 
    procedure On_Joy (Item : access Gtk_Check_Menu_Item_Record'Class) is
@@ -671,6 +696,7 @@ package body GUI is
       Now : constant Time := Clock;
       Ran : Natural := 0;
    begin
+      Host_Joystick.Poll;
       if Paused or else Monitor.Active then
          return True;
       end if;
@@ -827,7 +853,7 @@ package body GUI is
       M_File, M_Machine, M_Input, M_Help : Gtk_Menu;
       Mute : Gtk_Check_Menu_Item;
       pragma Warnings (Off, Mute);
-      Model_Group, Joy_Group, Keyset_Group : Widget_SList.GSlist :=
+      Model_Group, Joy_Group, Keyset_Group, Host_Group : Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
       pragma Unreferenced (Timer);
@@ -901,6 +927,14 @@ package body GUI is
                  Keyset_Keypad, On_Joy'Access);
       Add_Radio (M_Input, "Joystick on cursor keys + Right Ctrl",
                  Keyset_Group, Keyset_Cursor, On_Joy'Access);
+      Add_Separator (M_Input);
+      Host_Joystick.Scan;
+      Add_Radio (M_Input, "No game controller", Host_Group, Host_Items (-1),
+                 On_Host_Joy'Access);
+      for I in 0 .. Host_Joystick.Count - 1 loop
+         Add_Radio (M_Input, "Controller: " & Host_Joystick.Name (I),
+                    Host_Group, Host_Items (I), On_Host_Joy'Access);
+      end loop;
 
       M_Help := Add_Menu (Bar, "_Help");
       Add_Item (M_Help, "_Keyboard", On_Keys_Help'Access);
@@ -936,6 +970,16 @@ package body GUI is
       Updating_Menu := True;
       Joy_Items (2).Set_Active (True);
       Keyset_Keypad.Set_Active (True);
+      declare
+         Auto : constant Integer := Host_Joystick.Auto_Select;
+      begin
+         if Auto >= 0 then
+            Host_Joystick.Open (Auto);
+            Host_Items (Auto).Set_Active (True);
+         else
+            Host_Items (-1).Set_Active (True);
+         end if;
+      end;
       Updating_Menu := False;
 
       Start_Machine (Model);

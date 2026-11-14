@@ -7,6 +7,7 @@
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
+--    --list-joysticks   list host game controllers and exit
 --    --attach FILE      attach a disk image without autostarting
 --    --headless N       run N frames without GUI, then save screenshots
 --    --png FILE         screenshot file for headless mode (default shot.png)
@@ -30,6 +31,7 @@ with Blit;
 with GUI;
 with Monitor_Commands;
 with Keyboard;
+with Host_Joystick;
 with SID;
 with Wav_Sink;
 
@@ -92,6 +94,25 @@ begin
          elsif A = "--png" and then I < Argument_Count then
             I := I + 1;
             PNG := To_Unbounded_String (Argument (I));
+         elsif A = "--list-joysticks" then
+            Host_Joystick.Scan;
+            for J in 0 .. Host_Joystick.Count - 1 loop
+               Host_Joystick.Open (J);
+               delay 0.2;
+               Host_Joystick.Poll;
+               Put_Line ("js" &
+                         Ada.Strings.Fixed.Trim
+                           (Host_Joystick.Device_Number (J)'Image,
+                            Ada.Strings.Left) & ": " &
+                         Host_Joystick.Name (J) &
+                         (if Host_Joystick.Selected = J then "" else
+                          "  (cannot open)") &
+                         "  state=" & Keyboard.Host_Joystick_Bits'Image &
+                         (if J = Host_Joystick.Auto_Select
+                          then "  <- default" else ""));
+               Host_Joystick.Close;
+            end loop;
+            return;
          elsif A = "--attach" and then I < Argument_Count then
             I := I + 1;
             Attach := To_Unbounded_String (Argument (I));

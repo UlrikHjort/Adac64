@@ -302,9 +302,11 @@ package body Keyboard is
       end case;
    end Map_Key;
 
+   Host_Bits : Byte := 0;
+
    procedure Rebuild is
       Force_S, Force_NS : Boolean := False;
-      J : Byte := 0;
+      J : Byte := Host_Bits;
    begin
       Matrix := (others => 0);
       Restore_Down := False;
@@ -342,6 +344,16 @@ package body Keyboard is
          when 0 => null;
       end case;
    end Rebuild;
+
+   procedure Set_Host_Joystick (Bits : Byte) is
+   begin
+      if Bits /= Host_Bits then
+         Host_Bits := Bits;
+         Rebuild;
+      end if;
+   end Set_Host_Joystick;
+
+   function Host_Joystick_Bits return Byte is (Host_Bits);
 
    procedure Key_Event
      (Keyval  : Unsigned_32;
