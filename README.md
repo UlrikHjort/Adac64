@@ -5,12 +5,14 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
 
 ## Build and run
 
-    make                  # needs GNAT, gprbuild, GtkAda (libgtkada-dev), libpulse-dev
+    make                  # needs GNAT, gprbuild, GtkAda (libgtkada-dev), libpulse-dev,
+                          # libgtksourceview-4-0 (the studio's editor)
     bin/adac64            # C64
     bin/adac64 --c128     # C128, 40 columns
     bin/adac64 --c128 --80
-    bin/adac64 game.d64   # autostart (also .t64 / .prg)
-    make tests            # keyboard + CPU tests
+    bin/adac64 game.d64   # autostart (also .t64 / .prg / .asm)
+    bin/adac64 --studio   # assembler IDE and debugger
+    make tests            # keyboard, CPU and debugger tests
 
 Autostart types what a user would: `LOAD"name",8,1` + `RUN` on the C64, and
 `DLOAD"name"` + `RUN` (or `BLOAD` + `SYS`) on the C128, using the first
@@ -142,6 +144,59 @@ up when a breakpoint is hit. Numbers are hex (`$` optional):
     bl           list breakpoints    dev c | 8   view C64 or 1541 CPU
     x            close and continue
 
+## Studio: assembler and debugger
+
+`bin/adac64 --studio [file.asm]` (or Machine → Studio) opens an IDE next to
+the emulator: a 6502 editor with syntax highlighting (GtkSourceView), an
+assembler, and a source-level debugger working on the running machine.
+
+| Key | | Key | |
+|---|---|---|---|
+| F5 | build and run, or continue when stopped | F9 | toggle breakpoint (or click the gutter) |
+| Ctrl+F5 | rebuild and run | F10 | step over (runs a `JSR` to its end) |
+| F6 | pause | F11 / Shift+F11 | step into / step out |
+| F7 | build | Ctrl+F10 | run to the cursor line |
+| F12 | show the emulator | Ctrl+N/O/S/W | new / open / save / close tab |
+
+Run resets the machine, waits for READY, copies the program into memory
+(the disk in the drive is left alone) and types `RUN` when the program
+starts with a BASIC line at `$0801` (`!basic`), otherwise `SYS start`.
+When a breakpoint, watchpoint, step or pause stops the machine, the studio
+shows the source line, registers and cycle count (also since the previous
+stop), a disassembly with labels and a memory view (type `$addr` or a
+label). Watchpoints stop after the instruction that touches the address:
+`$d020 w`, `score rw`, `$0400-$07e7 w`, `$d020 off`, `clear`.
+Clicking an error in the build output jumps to the line. The open files
+are reopened next time.
+
+The assembler also works on its own: `bin/adac64 --asm game.asm` writes
+`game.prg` (or the `!to` name) plus a VICE label file `game.lbl`; passing
+an `.asm` file to `adac64` assembles and autostarts it. The syntax is
+ACME's:
+
+    *= $0801                 ; program counter
+    !basic                   ; BASIC line "10 SYS <next address>"
+    border = $d020           ; constant
+    start   ldx #0           ; label (a colon is optional)
+    -       lda text,x       ; anonymous labels: bne - / beq +
+            beq +
+            sta $0400,x
+            inx
+            bne -
+    +       rts
+    !zone print { .loop ... }  ; .local labels per zone, @local per label
+    !macro poke .a, .v { lda #.v : sta .a }   ; called as  +poke $d020, 0
+    !if DEBUG { ... } else { ... }    !for i, 0, 7 { !byte 1 << i }
+    text    !scr "hello", 0  ; also !byte !word !text !pet !fill !align
+                             ; !binary "f",size,skip  !source "f"  !to "f"
+
+Expressions: `$ff %1010 0x1f 'a' *` (PC), `+ - * / % & | ^ << >>`,
+`<x` / `>x` low / high byte, comparisons and `&& ||` for `!if`. Zero page
+addressing is chosen automatically, forward references are resolved over
+several passes, and the illegal opcodes (`lax sax dcp isc slo rla sre rra
+anc alr arr sbx ...`) are available. All 151 legal opcodes assemble
+identically to 64tass; `tests/debug_test` exercises the debugger.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -183,7 +238,10 @@ Disk images can also be dropped onto the window.
     src/keyboard.*   matrix and host key mapping
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
-    tests/           CPU and keyboard tests, mkd64.py image builder
+    src/asm.*        6502 assembler (ACME syntax)
+    src/studio.*     studio window    src/source_view.*  GtkSourceView binding
+    share/adac64/    6502 syntax highlighting (language-specs/acme6502.lang)
+    tests/           CPU, keyboard and debugger tests, mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py
                      KERNAL-format TAP encoder

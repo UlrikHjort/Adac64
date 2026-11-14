@@ -6,6 +6,12 @@ package Disasm is
 
    type Reader is access function (Addr : Word) return Byte;
 
+   type Addr_Mode is (Imp, Acc, Imm, ZP, ZPX, ZPY, Abso, AbsX, AbsY,
+                      IndX, IndY, Ind, Rel);
+   function Mode_Of (Op : Byte) return Addr_Mode;
+   function Mnemonic (Op : Byte) return String;    --  "LDA" (illegal ones too)
+   function Length_Of (M : Addr_Mode) return Natural;
+
    function Hex2 (B : Byte) return String;
    function Hex4 (W : Word) return String;
 

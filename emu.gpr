@@ -17,6 +17,7 @@ project Emu is
    end Binder;
 
    package Linker is
-      for Default_Switches ("Ada") use ("-lpulse-simple", "-lpulse");
+      for Default_Switches ("Ada") use ("-lpulse-simple", "-lpulse",
+                                         "-l:libgtksourceview-4.so.0");
    end Linker;
 end Emu;

@@ -118,7 +118,10 @@ package body Machine is
    --  Typing / autostart
    Type_Queue : Unbounded_String;
    type Auto_State is
-     (Idle, Wait_Ready, Wait_Load, Wait_Check, Wait_Boot, Wait_Tape);
+     (Idle, Wait_Ready, Wait_Load, Wait_Check, Wait_Boot, Wait_Tape,
+      Wait_Inject);
+   Inject_Data : Byte_Array_Access := null;
+   Inject_Load : Word := 0;
    Quiet_Frames : Natural := 0;
    Tape_Autostart : Boolean := False;
    Auto_Path : Unbounded_String;
@@ -140,6 +143,34 @@ package body Machine is
    --  cycle of the instruction), so writes take effect at the right time.
    In_Step      : Boolean := False;
    Instr_Ticked : Natural := 0;    --  cycles already clocked this step
+
+   --  Watchpoints (checked by the bus while the CPU executes)
+   type Watch is record
+      From, To : Word := 0;
+      On_Read, On_Write : Boolean := False;
+   end record;
+   Max_Watches : constant := 16;
+   Watches : array (1 .. Max_Watches) of Watch;
+   Watch_Count : Natural := 0;
+   Watch_Hit   : Boolean := False;
+   Watch_Write_Hit : Boolean := False;
+   Watch_Addr  : Word := 0;
+
+   procedure Check_Watch (Addr : Word; Is_Write : Boolean) is
+   begin
+      for I in 1 .. Watch_Count loop
+         if Addr >= Watches (I).From and then Addr <= Watches (I).To
+           and then (if Is_Write then Watches (I).On_Write
+                     else Watches (I).On_Read)
+         then
+            if not Watch_Hit then
+               Watch_Hit := True;
+               Watch_Write_Hit := Is_Write;
+               Watch_Addr := Addr;
+            end if;
+         end if;
+      end loop;
+   end Check_Watch;
    procedure Bus_Write (Addr : Word; Value : Byte);
    function VIC_Mem (Addr : Word) return Byte;
    function VIC_Color (Index : Natural) return Byte;
@@ -730,6 +761,9 @@ package body Machine is
       Page : constant Byte := Hi (Addr);
       Off  : Integer;
    begin
+      if Watch_Count > 0 and then In_Step then
+         Check_Watch (Addr, False);
+      end if;
       if Addr < 2 then
          return (if Addr = 0 then Port_DDR else Port_Read);
       end if;
@@ -749,6 +783,9 @@ package body Machine is
       Page : constant Byte := Hi (Addr);
       Off  : Integer;
    begin
+      if Watch_Count > 0 and then In_Step then
+         Check_Watch (Addr, True);
+      end if;
       if Addr < 2 then
          if Addr = 0 then
             Port_DDR := Value;
@@ -1466,12 +1503,61 @@ package body Machine is
    end Autostart;
 
    function Autostart_Busy return Boolean is
-     (Auto in Wait_Ready | Wait_Load | Wait_Boot | Wait_Tape);
+     (Auto in Wait_Ready | Wait_Load | Wait_Boot | Wait_Tape | Wait_Inject);
+
+   procedure Inject_And_Run (Data : Byte_Array; Load : Word;
+                             Command : String; With_Reset : Boolean := True)
+   is
+   begin
+      Inject_Data := new Byte_Array'(Data);
+      Inject_Load := Load;
+      Auto_Command := To_Unbounded_String (Command & ASCII.LF);
+      Type_Queue := Null_Unbounded_String;
+      if With_Reset then
+         Reset;
+      end if;
+      Auto := Wait_Inject;
+      Auto_Frames := 0;
+   end Inject_And_Run;
 
    procedure Autostart_Step is
    begin
       case Auto is
          when Idle => null;
+         when Wait_Inject =>
+            Auto_Frames := Auto_Frames + 1;
+            if Screen_Contains ("READY.") or else Auto_Frames > 600 then
+               if Inject_Data /= null then
+                  for I in Inject_Data'Range loop
+                     declare
+                        A : constant Natural :=
+                          Natural (Inject_Load) + (I - Inject_Data'First);
+                     begin
+                        exit when A > 16#FFFF#;
+                        Poke (Word (A), Inject_Data (I));
+                     end;
+                  end loop;
+                  declare
+                     End_A : constant Natural := Natural'Min
+                       (Natural (Inject_Load) + Inject_Data'Length, 16#FFFF#);
+                  begin
+                     if C64_Mode and then Inject_Load = 16#0801# then
+                        --  VARTAB / ARYTAB / STREND after the program
+                        for Z in 0 .. 2 loop
+                           Poke (Word (16#2D# + 2 * Z), Byte (End_A mod 256));
+                           Poke (Word (16#2E# + 2 * Z), Byte (End_A / 256));
+                        end loop;
+                     elsif not C64_Mode and then Inject_Load = 16#1C01# then
+                        Poke (16#1210#, Byte (End_A mod 256));
+                        Poke (16#1211#, Byte (End_A / 256));
+                     end if;
+                  end;
+               end if;
+               Type_Text (To_String (Auto_Command));
+               Tape_Autostart := False;
+               Auto := Wait_Load;
+               Auto_Frames := 0;
+            end if;
          when Wait_Ready =>
             Auto_Frames := Auto_Frames + 1;
             if Screen_Contains ("READY.") or else Auto_Frames > 600 then
@@ -1718,7 +1804,7 @@ package body Machine is
    --  Debugger support
    ---------------------------------------------------------------------
 
-   Max_Breakpoints : constant := 16;
+   Max_Breakpoints : constant := 64;
    Breakpoints : array (1 .. Max_Breakpoints) of Word := (others => 0);
    BP_Count    : Natural := 0;
    Break_Flag  : Boolean := False;
@@ -1764,11 +1850,127 @@ package body Machine is
 
    function Break_Hit return Boolean is (Break_Flag);
 
+   Reason      : Stop_Reason := None;
+   Pause_Req   : Boolean := False;
+   Temp_Addr   : Integer := -1;      --  Run_To / Step_Over target
+   Temp_SP     : Byte := 0;
+   Out_Active  : Boolean := False;   --  Step_Out
+   Out_SP      : Byte := 0;
+
+   function Debugging return Boolean is
+     (BP_Count > 0 or else Watch_Count > 0 or else Temp_Addr >= 0
+      or else Out_Active or else Pause_Req);
+
+   procedure Stop (R : Stop_Reason) is
+   begin
+      Break_Flag := True;
+      Reason := R;
+      Temp_Addr := -1;
+      Out_Active := False;
+      Pause_Req := False;
+   end Stop;
+
    procedure Resume is
    begin
       Break_Flag := False;
       Skip_Break := True;
+      Watch_Hit := False;
    end Resume;
+
+   function Last_Stop return Stop_Reason is (Reason);
+
+   function Stop_Text return String is
+   begin
+      case Reason is
+         when None => return "";
+         when Breakpoint => return "breakpoint at $" & Disasm.Hex4 (CPU.PC);
+         when Watch_Read =>
+            return "read of $" & Disasm.Hex4 (Watch_Addr) & " (PC $" &
+              Disasm.Hex4 (CPU.PC) & ")";
+         when Watch_Write =>
+            return "write to $" & Disasm.Hex4 (Watch_Addr) & " (PC $" &
+              Disasm.Hex4 (CPU.PC) & ")";
+         when Step_Done => return "stopped at $" & Disasm.Hex4 (CPU.PC);
+         when Paused => return "paused at $" & Disasm.Hex4 (CPU.PC);
+      end case;
+   end Stop_Text;
+
+   procedure Request_Break is
+   begin
+      if not Break_Flag then
+         Pause_Req := True;
+      end if;
+   end Request_Break;
+
+   procedure Run_To (Addr : Word) is
+   begin
+      Temp_Addr := Integer (Addr);
+      Temp_SP := 0;
+      Resume;
+   end Run_To;
+
+   procedure Step_Out is
+   begin
+      Out_Active := True;
+      Out_SP := CPU.SP;
+      Resume;
+   end Step_Out;
+
+   procedure Add_Watch (From, To : Word; On_Read, On_Write : Boolean) is
+   begin
+      for I in 1 .. Watch_Count loop
+         if Watches (I).From = From then
+            Watches (I) := (From, To, On_Read, On_Write);
+            return;
+         end if;
+      end loop;
+      if Watch_Count < Max_Watches then
+         Watch_Count := Watch_Count + 1;
+         Watches (Watch_Count) := (From, To, On_Read, On_Write);
+      end if;
+   end Add_Watch;
+
+   procedure Remove_Watch (From : Word) is
+   begin
+      for I in 1 .. Watch_Count loop
+         if Watches (I).From = From then
+            Watches (I) := Watches (Watch_Count);
+            Watch_Count := Watch_Count - 1;
+            return;
+         end if;
+      end loop;
+   end Remove_Watch;
+
+   procedure Clear_Watches is
+   begin
+      Watch_Count := 0;
+      Watch_Hit := False;
+   end Clear_Watches;
+
+   function Watch_List return String is
+      R : Unbounded_String;
+   begin
+      for I in 1 .. Watch_Count loop
+         Append (R, " $" & Disasm.Hex4 (Watches (I).From) &
+                 (if Watches (I).To /= Watches (I).From
+                  then "-$" & Disasm.Hex4 (Watches (I).To) else "") &
+                 (if Watches (I).On_Read then " r" else "") &
+                 (if Watches (I).On_Write then " w" else ""));
+      end loop;
+      return (if Watch_Count = 0 then " (none)" else To_String (R));
+   end Watch_List;
+
+   function Cycle_Count return Long_Long_Integer is (Total_Cycles);
+
+   function Is_Breakpoint (Addr : Word) return Boolean is
+   begin
+      for I in 1 .. BP_Count loop
+         if Breakpoints (I) = Addr then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Is_Breakpoint;
 
    function At_Breakpoint return Boolean is
    begin
@@ -1945,25 +2147,52 @@ package body Machine is
       return Executed;
    end Step_System;
 
+   function At_Breakpoint_Now return Boolean is
+     (BP_Count > 0 and then At_Breakpoint);
+
    procedure Run_Frame is
+      Executed : Boolean;
+      Op : Byte := 0;
    begin
       if Break_Flag then
          return;          --  stopped at a breakpoint until Resume
       end if;
       while not VIC.Frame_Done loop
-         if BP_Count > 0 and then VIC.Stall_Cycles = 0 then
-            if not Skip_Break and then At_Breakpoint then
-               Break_Flag := True;
+         if Debugging and then VIC.Stall_Cycles = 0 and then not Z80_Active
+         then
+            if Pause_Req then
+               Stop (Paused);
                return;
             end if;
+            if not Skip_Break then
+               if At_Breakpoint_Now then
+                  Stop (Breakpoint);
+                  return;
+               end if;
+               if Temp_Addr >= 0 and then Integer (CPU.PC) = Temp_Addr
+                 and then CPU.SP >= Temp_SP
+               then
+                  Stop (Step_Done);
+                  return;
+               end if;
+            end if;
             Skip_Break := False;
+            if Out_Active then
+               Op := Peek (CPU.PC);
+            end if;
          end if;
-         declare
-            Dummy : constant Boolean := Step_System;
-            pragma Unreferenced (Dummy);
-         begin
-            null;
-         end;
+         Executed := Step_System;
+         if Executed and then (Watch_Hit or else Out_Active) then
+            if Watch_Hit then
+               Watch_Hit := False;
+               Stop (if Watch_Write_Hit then Watch_Write else Watch_Read);
+               return;
+            end if;
+            if Op in 16#60# | 16#40# and then CPU.SP > Out_SP then
+               Stop (Step_Done);
+               return;
+            end if;
+         end if;
       end loop;
       VIC.Frame_Done := False;
       End_Of_Frame;
@@ -1974,11 +2203,24 @@ package body Machine is
       loop
          exit when Step_System;
       end loop;
+      Watch_Hit := False;
       if VIC.Frame_Done then
          VIC.Frame_Done := False;
          End_Of_Frame;
       end if;
       Skip_Break := True;
+      Reason := Step_Done;
    end Step_Instruction;
+
+   procedure Step_Over is
+   begin
+      if Peek (CPU.PC) = 16#20# then          --  JSR: run to the next one
+         Temp_Addr := Integer (CPU.PC + 3);
+         Temp_SP := CPU.SP;
+         Resume;
+      else
+         Step_Instruction;
+      end if;
+   end Step_Over;
 
 end Machine;

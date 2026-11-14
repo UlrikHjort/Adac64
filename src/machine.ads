@@ -89,6 +89,29 @@ package Machine is
 
    --  Debugger (machine-code monitor)
    procedure Step_Instruction;            --  one C64 CPU instruction
+   procedure Step_Over;      --  like Step_Instruction, but runs a JSR to its end
+   procedure Step_Out;       --  run until the current subroutine returns
+   procedure Run_To (Addr : Word);   --  resume, stop when PC = Addr
+   procedure Request_Break;  --  stop at the next instruction boundary
+
+   type Stop_Reason is (None, Breakpoint, Watch_Read, Watch_Write,
+                        Step_Done, Paused);
+   function Last_Stop return Stop_Reason;
+   function Stop_Text return String;      --  "breakpoint at $C000" ...
+
+   procedure Add_Watch (From, To : Word; On_Read, On_Write : Boolean);
+   procedure Remove_Watch (From : Word);
+   procedure Clear_Watches;
+   function Watch_List return String;
+   --  Stop after a CPU instruction that reads/writes From .. To
+
+   function Is_Breakpoint (Addr : Word) return Boolean;
+   function Cycle_Count return Long_Long_Integer;   --  since power-on
+
+   procedure Inject_And_Run (Data : Byte_Array; Load : Word;
+                             Command : String; With_Reset : Boolean := True);
+   --  Reset (optional), wait for READY, copy Data into RAM at Load (BASIC
+   --  pointers are set when Load = $0801) and type Command (e.g. "RUN").
    procedure Set_Breakpoint (Addr : Word);
    procedure Clear_Breakpoint (Addr : Word);
    procedure Clear_Breakpoints;

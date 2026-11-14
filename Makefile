@@ -6,10 +6,12 @@ all:
 	gprbuild -P emu.gpr -j0
 
 tests: all
-	mkdir -p obj/tests
+	mkdir -p obj/tests obj/tests_dbg
 	gprbuild -q -P tests/cpu_test.gpr
 	gprbuild -q -P tests/kbd_test.gpr
+	gprbuild -q -P tests/debug_test.gpr
 	bin/kbd_test
+	bin/debug_test
 	@if [ -f $(KLAUS) ]; then bin/cpu_test $(KLAUS); else \
 	  echo "Skipping CPU test: put Klaus Dormann's 6502_functional_test.bin in tests/"; fi
 

@@ -44,6 +44,7 @@ with SID;
 use type SID.Chip_Model;
 with Blit;
 with Monitor;
+with Studio;
 with Settings;
 with Tape;
 with Drive1541;
@@ -426,6 +427,12 @@ package body GUI is
       Area.Queue_Draw;
    end Refresh_Screen;
 
+   procedure On_Studio (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Studio.Open (Win);
+   end On_Studio;
+
    procedure On_Monitor (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
    begin
@@ -570,6 +577,7 @@ package body GUI is
 
    procedure Save_Settings is
    begin
+      Studio.Save_State;
       Settings.Set ("sid", (if SID.Model = SID.MOS8580 then "8580" else "6581"));
       Settings.Set ("standard",
                     (if Machine.Standard = Machine.NTSC then "ntsc" else "pal"));
@@ -1018,7 +1026,12 @@ package body GUI is
          end;
       end if;
 
-      if Machine.Break_Hit and then not Monitor.Active then
+      if Studio.Is_Open then
+         Studio.Tick;
+      end if;
+      if Machine.Break_Hit and then not Monitor.Active
+        and then not Studio.Is_Open
+      then
          Keyboard.Release_All;
          Refresh_Screen;
          Monitor.Open (Win, "breakpoint at $" &
@@ -1219,6 +1232,8 @@ package body GUI is
       Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
       Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);
       Add_Item (M_Machine, "Mo_nitor (Shift+F12)", On_Monitor'Access);
+      Add_Item (M_Machine, "_Studio: assembler and debugger",
+                On_Studio'Access);
       Add_Item (M_Machine, "Paste text (Ctrl+Shift+V)", On_Paste'Access);
       Add_Item (M_Machine, "_Quick save (Shift+F9)", On_Quick_Save'Access);
       Add_Item (M_Machine, "Quick _load (Shift+F10)", On_Quick_Load'Access);
@@ -1302,6 +1317,7 @@ package body GUI is
 
       SID.Sink := Audio.Push'Access;
       Monitor.On_Change := Refresh_Screen'Access;
+      Studio.Refresh_Screen := Refresh_Screen'Access;
       Audio.Start;
 
       Updating_Menu := True;
@@ -1393,6 +1409,9 @@ package body GUI is
       Sync_Menu;
 
       Win.Show_All;
+      if Open_Studio then
+         Studio.Open (Win, To_String (Studio_File));
+      end if;
       --  Run below GTK's redraw priority (120), so the window is still
       --  painted and responsive while the emulation runs flat out (warp).
       Timer := Timer_Sources.Timeout_Add

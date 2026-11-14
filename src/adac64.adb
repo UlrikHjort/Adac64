@@ -9,6 +9,8 @@
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --list-joysticks   list host game controllers and exit
 --    --pal / --ntsc     video standard (default: last used / PAL)
+--    --asm SRC [-o OUT] assemble a source file and exit
+--    --studio [SRC]     open the studio (assembler IDE and debugger)
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
@@ -39,6 +41,7 @@ with Host_Joystick;
 with REU;
 with Drive1541;
 with SID;
+with Asm;
 with Wav_Sink;
 
 procedure AdaC64 is
@@ -91,7 +94,40 @@ begin
       declare
          A : constant String := Argument (I);
       begin
-         if A = "--c128" then
+         if A = "--asm" and then I < Argument_Count then
+            declare
+               Src : constant String := Argument (I + 1);
+               PRG : Unbounded_String;
+            begin
+               Asm.Report := Print_Line'Unrestricted_Access;
+               if I + 3 <= Argument_Count and then Argument (I + 2) = "-o"
+               then
+                  Asm.Assemble (Src);   --  sets !to
+                  Asm.Write_PRG (Argument (I + 3), Ok);
+                  PRG := To_Unbounded_String (Argument (I + 3));
+                  for K in 1 .. Asm.Error_Count loop
+                     Put_Line (Asm.Error_File (K) & ":" &
+                               Ada.Strings.Fixed.Trim
+                                 (Asm.Error_Line (K)'Image, Ada.Strings.Left)
+                               & ": " & Asm.Error_Text (K));
+                  end loop;
+                  Ok := Ok and then not Asm.Has_Errors;
+               else
+                  Asm.Build (Src, PRG, Ok);
+               end if;
+               if not Ok then
+                  Set_Exit_Status (Failure);
+               end if;
+               return;
+            end;
+         elsif A = "--studio" then
+            GUI.Open_Studio := True;
+            if I < Argument_Count and then Asm.Is_Source (Argument (I + 1))
+            then
+               I := I + 1;
+               GUI.Studio_File := To_Unbounded_String (Argument (I));
+            end if;
+         elsif A = "--c128" then
             Model := Machine.C128;
             Model_Given := True;
          elsif A = "--c64" then
@@ -199,6 +235,25 @@ begin
       end;
       I := I + 1;
    end loop;
+
+   if Length (File) > 0 and then Asm.Is_Source (To_String (File))
+     and then GUI.Open_Studio
+   then
+      GUI.Studio_File := File;
+      File := Null_Unbounded_String;
+   elsif Length (File) > 0 and then Asm.Is_Source (To_String (File)) then
+      declare
+         PRG : Unbounded_String;
+      begin
+         Asm.Report := Print_Line'Unrestricted_Access;
+         Asm.Build (To_String (File), PRG, Ok);
+         if not Ok then
+            Set_Exit_Status (Failure);
+            return;
+         end if;
+         File := PRG;
+      end;
+   end if;
 
    if Headless = 0 then
       GUI.Drive_Choice := Drive_Kind;

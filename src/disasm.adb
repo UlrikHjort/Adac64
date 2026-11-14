@@ -26,8 +26,16 @@ package body Disasm is
      "CPXSBCNOPISCCPXSBCINCISCINXSBCNOPSBCCPXSBCINCISC" &
      "BEQSBCJAMISCNOPSBCINCISCSEDSBCNOPISCNOPSBCINCISC";
 
-   type Mode is (Imp, Acc, Imm, ZP, ZPX, ZPY, Abso, AbsX, AbsY,
-                 IndX, IndY, Ind, Rel);
+   subtype Mode is Addr_Mode;
+
+   function Mnemonic (Op : Byte) return String is
+     (Names (Natural (Op) * 3 + 1 .. Natural (Op) * 3 + 3));
+
+   function Length_Of (M : Addr_Mode) return Natural is
+     (case M is
+        when Imp | Acc => 1,
+        when Abso | AbsX | AbsY | Ind => 3,
+        when others => 2);
 
    function Mode_Of (Op : Byte) return Mode is
       R : constant Natural := Natural (Op / 16);
