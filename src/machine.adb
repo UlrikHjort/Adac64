@@ -284,9 +284,12 @@ package body Machine is
       end if;
    end CIA1_Port_Read;
 
-   procedure Sync_Drive is
+   procedure Sync_Drive (Write_Delay : Natural := 0) is
       --  Bring the drive up to the moment of the current bus access
       --  (approximated as the last cycle of the executing instruction).
+      --  A write by the computer becomes visible to the drive one cycle
+      --  later (CIA output, 7406 inverter and VIA input latch), so for
+      --  writes the drive is run one cycle further before the change.
       Offset : Natural := (if CPU.Current_Cycles > 0
                            then CPU.Current_Cycles - 1 else 0);
    begin
@@ -294,7 +297,8 @@ package body Machine is
          if VIA_Fast then
             Offset := Offset / 2;
          end if;
-         Drive1541.Run_Until (Total_Cycles + Long_Long_Integer (Offset));
+         Drive1541.Run_Until
+           (Total_Cycles + Long_Long_Integer (Offset + Write_Delay));
       end if;
    end Sync_Drive;
 
@@ -448,7 +452,7 @@ package body Machine is
             CIA.Write (CIA1, Off, Value);
          when 16#DD00# .. 16#DDFF# =>
             if Off mod 16 = 0 or else Off mod 16 = 2 then
-               Sync_Drive;
+               Sync_Drive (Write_Delay => 1);
             end if;
             CIA.Write (CIA2, Off, Value);
             if Off mod 16 = 0 or else Off mod 16 = 2 then
