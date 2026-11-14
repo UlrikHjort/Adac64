@@ -13,6 +13,7 @@ with Keyboard;
 with Media;
 with Disasm;
 with CRT;
+with REU;
 use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
@@ -580,6 +581,15 @@ package body Machine is
       return 16#FF#;
    end Cart_IO_Read;
 
+   procedure REU_Stall is
+   begin
+      --  The CPU is halted while the REU does its DMA
+      if REU.Stall_Cycles > 0 then
+         VIC.Stall_Cycles := VIC.Stall_Cycles + REU.Stall_Cycles;
+         REU.Stall_Cycles := 0;
+      end if;
+   end REU_Stall;
+
    function IO_Read (Addr : Word) return Byte is
       Off : constant Natural := Natural (Addr and 16#FF#);
    begin
@@ -621,6 +631,11 @@ package body Machine is
                return CIA2_Port_A_Read;
             end if;
             return CIA.Read (CIA2, Off);
+         when 16#DF00# .. 16#DFFF# =>
+            if REU.Present then
+               return REU.Read (Natural (Addr and 16#1F#));
+            end if;
+            return Cart_IO_Read (Addr);
          when others =>
             return Cart_IO_Read (Addr);
       end case;
@@ -669,6 +684,13 @@ package body Machine is
             if Off mod 16 = 0 or else Off mod 16 = 2 then
                Update_VIC_Bank;
                Update_IEC_Outputs;
+            end if;
+         when 16#DF00# .. 16#DFFF# =>
+            if REU.Present then
+               REU.Write (Natural (Addr and 16#1F#), Value);
+               REU_Stall;
+            else
+               Cart_IO_Write (Addr, Value);
             end if;
          when others =>
             Cart_IO_Write (Addr, Value);
@@ -729,7 +751,15 @@ package body Machine is
             MMU_CR := MMU_PCR (Natural (Addr - 16#FF00#));
          end if;
          Rebuild_Map;
+         if Addr = 16#FF00# then
+            REU.FF00_Written;
+            REU_Stall;
+         end if;
          return;
+      end if;
+      if Addr = 16#FF00# then
+         REU.FF00_Written;      --  C64: the write also goes to RAM below
+         REU_Stall;
       end if;
       Off := Write_Map (Page);
       if Off >= 0 then
@@ -939,6 +969,8 @@ package body Machine is
 
    procedure Power_On (M : Model_Type; ROM_Dir : String; Ok : out Boolean) is
    begin
+      REU.Bus_Read := Bus_Read'Access;
+      REU.Bus_Write := Bus_Write'Access;
       Find_Drive_ROM (ROM_Dir);
       Ok := True;
       Err := Null_Unbounded_String;
@@ -1012,6 +1044,7 @@ package body Machine is
          Cart_Exrom := False;    --  boots in Ultimax mode (boot jumper)
          Cart_Game := True;
       end if;
+      REU.Reset;
       CIA.Reset (CIA1);
       CIA.Reset (CIA2);
       VIC.Reset;
@@ -1400,7 +1433,7 @@ package body Machine is
    --  Snapshots
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP4";
+   Snapshot_Magic : constant String := "ADAC64SNAP5";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;
@@ -1443,6 +1476,7 @@ package body Machine is
       Boolean'Write (S, Z80_Was_Used);
       Natural'Write (S, Z80_Half);
       ZCPU.Save_State (S);
+      REU.Save_State (S);
       VIC.Save_State (S);
       SID.Save_State (S);
       VDC.Save_State (S);
@@ -1520,6 +1554,7 @@ package body Machine is
       Boolean'Read (S, Z80_Was_Used);
       Natural'Read (S, Z80_Half);
       ZCPU.Load_State (S);
+      REU.Load_State (S);
       VIC.Load_State (S);
       SID.Load_State (S);
       VDC.Load_State (S);
@@ -1731,7 +1766,7 @@ package body Machine is
          VIC.Stall_Cycles := 0;
          Clock_Devices (N);
       elsif Z80_Active then
-         ZCPU.INT_Line := VIC.IRQ or else CIA1.IRQ;
+         ZCPU.INT_Line := VIC.IRQ or else CIA1.IRQ or else REU.IRQ;
          NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
          if NMI_Now and then not NMI_Prev then
             ZCPU.NMI_Pending := True;
@@ -1753,7 +1788,7 @@ package body Machine is
             end if;
          end if;
 
-         CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ;
+         CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ or else REU.IRQ;
          NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
          if NMI_Now and then not NMI_Prev then
             CPU.NMI_Pending := True;

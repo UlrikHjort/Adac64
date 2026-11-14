@@ -8,6 +8,7 @@
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
 --    --no-fast-load     with the 1541: KERNAL LOAD through the drive too
 --    --list-joysticks   list host game controllers and exit
+--    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
 --    --attach FILE      attach a disk image without autostarting
 --    --headless N       run N frames without GUI, then save screenshots
 --    --png FILE         screenshot file for headless mode (default shot.png)
@@ -32,6 +33,7 @@ with GUI;
 with Monitor_Commands;
 with Keyboard;
 with Host_Joystick;
+with REU;
 with SID;
 with Wav_Sink;
 
@@ -42,7 +44,7 @@ procedure AdaC64 is
    end Print_Line;
    subtype Machine_Word is Types.Word;
    Model    : Machine.Model_Type := Machine.C64;
-   Model_Given, Key80_Given : Boolean := False;
+   Model_Given, Key80_Given, REU_Given : Boolean := False;
    ROM_Dir  : Unbounded_String := To_Unbounded_String ("/usr/share/vice");
    Headless : Natural := 0;
    PNG      : Unbounded_String := To_Unbounded_String ("shot.png");
@@ -122,6 +124,10 @@ begin
                Host_Joystick.Close;
             end loop;
             return;
+         elsif A = "--reu" and then I < Argument_Count then
+            I := I + 1;
+            REU.Set_Size (REU.Size_KB'Value (Argument (I)));
+            REU_Given := True;
          elsif A = "--attach" and then I < Argument_Count then
             I := I + 1;
             Attach := To_Unbounded_String (Argument (I));
@@ -175,7 +181,7 @@ begin
 
    if Headless = 0 then
       GUI.Run (Model, To_String (ROM_Dir), To_String (File),
-               Model_Given, Key80_Given);
+               Model_Given, Key80_Given, REU_Given);
       return;
    end if;
 

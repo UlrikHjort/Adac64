@@ -44,6 +44,8 @@ with SID;
 with Blit;
 with Monitor;
 with Settings;
+with REU;
+use type REU.Size_KB;
 use type Keyboard.Joy_Keyset;
 with Gtk.Clipboard;
 with Gdk.Property;
@@ -487,8 +489,28 @@ package body GUI is
       Paste_Text;
    end On_Paste;
 
+   type REU_Choice is range 0 .. 5;
+   REU_Sizes : constant array (REU_Choice) of REU.Size_KB :=
+     (0, 128, 256, 512, 2048, 16384);
+   REU_Items : array (REU_Choice) of Gtk_Radio_Menu_Item;
+
+   procedure On_REU (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      for C in REU_Items'Range loop
+         if Gtk_Radio_Menu_Item (Item) = REU_Items (C) then
+            REU.Set_Size (REU_Sizes (C));
+            Machine.Reset;
+            Sync_Menu;
+         end if;
+      end loop;
+   end On_REU;
+
    procedure Save_Settings is
    begin
+      Settings.Set ("reu", Integer (REU.Size));
       Settings.Set ("model", (if Machine.Model = C128 then "c128" else "c64"));
       Settings.Set ("key4080", Machine.Key_4080_Down);
       Settings.Set ("joyport", Integer (Keyboard.Joystick_Port));
@@ -1005,12 +1027,14 @@ package body GUI is
    procedure Run (Model : Machine.Model_Type; ROM_Dir : String;
                   File : String;
                   Model_Given : Boolean := False;
-                  Key80_Given : Boolean := False) is
+                  Key80_Given : Boolean := False;
+                  REU_Given : Boolean := False) is
       VBox : Gtk_Box;
       M_File, M_Machine, M_Input, M_View, M_Help : Gtk_Menu;
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
-      Model_Group, Joy_Group, Keyset_Group, Host_Group : Widget_SList.GSlist :=
+      Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group :
+        Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
       pragma Unreferenced (Timer);
@@ -1085,6 +1109,16 @@ package body GUI is
       Add_Check (M_Machine, "_Pause", Item_Pause, On_Pause'Access);
       Add_Check (M_Machine, "_Warp mode (F11)", Item_Warp, On_Warp'Access);
       Add_Check (M_Machine, "_Mute sound", Mute, On_Mute'Access);
+      Add_Separator (M_Machine);
+      Add_Radio (M_Machine, "No RAM expansion", REU_Group, REU_Items (0),
+                 On_REU'Access);
+      for C in REU_Choice range 1 .. REU_Choice'Last loop
+         Add_Radio (M_Machine,
+                    "REU" & REU_Sizes (C)'Image & " KB" &
+                    (case C is when 1 => " (1700)", when 2 => " (1764)",
+                               when 3 => " (1750)", when others => ""),
+                    REU_Group, REU_Items (C), On_REU'Access);
+      end loop;
       Add_Separator (M_Machine);
       Add_Check (M_Machine, "C128: 40/80 key down (boot in 80 columns)",
                  Item_4080, On_4080'Access);
@@ -1184,6 +1218,14 @@ package body GUI is
             Host_Items (-1).Set_Active (True);
          end if;
       end;
+      if not REU_Given then
+         REU.Set_Size (REU.Size_KB (Settings.Get ("reu", 0)));
+      end if;
+      for C in REU_Items'Range loop
+         if REU_Sizes (C) = REU.Size then
+            REU_Items (C).Set_Active (True);
+         end if;
+      end loop;
       Mute.Set_Active (Audio.Muted);
       Item_Pos.Set_Active (Keyboard.Positional);
       Item_Int.Set_Active (Integer_Scale);

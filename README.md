@@ -80,16 +80,24 @@ Magic Desk, C64 Game System, Dinamic and EasyFlash (read-only flash, 256 bytes
 of RAM at `$DF00`). On a C128 a cartridge makes the KERNAL boot in C64 mode,
 as on the real machine.
 
+### RAM expansion (REU)
+
+Machine menu or `--reu KB`: Commodore 1700 (128 KB), 1764 (256 KB), 1750
+(512 KB) or larger (2 MB, 16 MB) RAM Expansion Units with the 8726 DMA
+controller at `$DF00` (stash, fetch, swap, verify, autoload, `$FF00`
+trigger, IRQ). The CPU is halted during DMA as on the real hardware.
+
 ### CP/M
 
 The C128's Z80 boots CP/M Plus from the official Commodore system disk (a
-D64; available at <https://www.zimmers.net/anonftp/pub/cbm/demodisks/c128/>,
-e.g. `cpm.system.6228151676.d64.gz`). Attach or autostart it on the C128;
+D64; available at <https://www.zimmers.net/anonftp/pub/cbm/demodisks/c128/>;
+`cpm.system.622-3297432.d64.gz` is the latest, 28 May 87, version, which
+also supports an REU as RAM disk `M:`). Attach or autostart it on the C128;
 the KERNAL boots it from its boot sector (40 or 80 columns, per the 40/80
 key). Autostarting a boot disk runs in warp until the drive is quiet, so the
 `A>` prompt appears after a few seconds instead of ~90 (real 1541 speed):
 
-    bin/adac64 --c128 --80 roms/cpm/cpm.system.6228151676.d64
+    bin/adac64 --c128 --80 --reu 512 roms/cpm/cpm.system.622-3297432.d64
 
 ### Snapshots
 
@@ -143,6 +151,7 @@ Disk images can also be dropped onto the window.
     src/cia.*        CIA           src/vdc.*      VDC
     src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop
     src/crt.*        CRT cartridge files
+    src/reu.*        RAM Expansion Unit
     src/media.*      D64/T64/PRG images, fast-load traps, host directory
     src/drive1541.*  1541 drive: CPU, memory map, GCR disk surface
     src/via.*        6522 VIA       src/iec.ads    serial bus lines
