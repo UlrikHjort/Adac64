@@ -663,6 +663,10 @@ package body GUI is
    ---------------------------------------------------------------------
 
 
+   function On_Timer_Data (Unused : Integer) return Boolean;
+
+   package Timer_Sources is new Glib.Main.Generic_Sources (Integer);
+
    function On_Timer return Boolean is
       Now : constant Time := Clock;
       Ran : Natural := 0;
@@ -761,6 +765,9 @@ package body GUI is
       end if;
       return True;
    end On_Timer;
+
+   function On_Timer_Data (Unused : Integer) return Boolean is
+     (On_Timer);
 
    ---------------------------------------------------------------------
    --  Construction
@@ -938,7 +945,11 @@ package body GUI is
       Sync_Menu;
 
       Win.Show_All;
-      Timer := Glib.Main.Timeout_Add (4, On_Timer'Access);
+      --  Run below GTK's redraw priority (120), so the window is still
+      --  painted and responsive while the emulation runs flat out (warp).
+      Timer := Timer_Sources.Timeout_Add
+        (4, On_Timer_Data'Access, 0,
+         Priority => 130);
       Gtk.Main.Main;
       Machine.Shutdown;
       Audio.Stop;
