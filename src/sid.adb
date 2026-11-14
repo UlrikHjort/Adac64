@@ -4,7 +4,8 @@ with Ada.Numerics.Elementary_Functions; use Ada.Numerics.Elementary_Functions;
 package body SID is
    pragma Suppress (All_Checks);
 
-   Regs : array (0 .. 31) of Byte := (others => 0);
+   type Reg_Array is array (0 .. 31) of Byte;
+   Regs : Reg_Array := (others => 0);
 
    type Env_State is (Attack, Decay_Sustain, Release);
 
@@ -23,7 +24,8 @@ package body SID is
       MSB_Rise   : Boolean := False;   --  for hard sync
    end record;
 
-   Voices : array (0 .. 2) of Voice;
+   type Voice_Array is array (0 .. 2) of Voice;
+   Voices : Voice_Array;
 
    Rate_Periods : constant array (0 .. 15) of Natural :=
      (9, 32, 63, 95, 149, 220, 267, 313,
@@ -370,5 +372,29 @@ package body SID is
          end if;
       end loop;
    end Clock;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Reg_Array'Write (S, Regs);
+      Voice_Array'Write (S, Voices);
+      Float'Write (S, Cycle_Acc);
+      Float'Write (S, Filt_LP);
+      Float'Write (S, Filt_BP);
+      Float'Write (S, DC_Prev_In);
+      Float'Write (S, DC_Prev_Out);
+      Byte'Write (S, Last_Write);
+   end Save_State;
+
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Reg_Array'Read (S, Regs);
+      Voice_Array'Read (S, Voices);
+      Float'Read (S, Cycle_Acc);
+      Float'Read (S, Filt_LP);
+      Float'Read (S, Filt_BP);
+      Float'Read (S, DC_Prev_In);
+      Float'Read (S, DC_Prev_Out);
+      Byte'Read (S, Last_Write);
+   end Load_State;
 
 end SID;

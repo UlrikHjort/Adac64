@@ -11,6 +11,8 @@
 --    --png FILE         screenshot file for headless mode (default shot.png)
 --    --type TEXT        type TEXT after boot (use \n for RETURN)
 --    --type-at F TEXT   type TEXT at frame F (repeatable)
+--    --save-snapshot F save the machine state after the run
+--    --load-snapshot F start from a saved machine state
 --    --dump FILE        headless: write the 64 KB CPU view of memory
 --    --wav FILE         headless: record SID output to a WAV file
 
@@ -35,6 +37,7 @@ procedure AdaC64 is
    Wav      : Unbounded_String;
    Attach   : Unbounded_String;
    Dump     : Unbounded_String;
+   Save_Snap, Load_Snap : Unbounded_String;
    type Timed_Text is record
       Frame : Natural := 0;
       Text  : Unbounded_String;
@@ -89,6 +92,12 @@ begin
               (Natural'Value (Argument (I + 1)),
                To_Unbounded_String (Unescape (Argument (I + 2))));
             I := I + 2;
+         elsif A = "--save-snapshot" and then I < Argument_Count then
+            I := I + 1;
+            Save_Snap := To_Unbounded_String (Argument (I));
+         elsif A = "--load-snapshot" and then I < Argument_Count then
+            I := I + 1;
+            Load_Snap := To_Unbounded_String (Argument (I));
          elsif A = "--dump" and then I < Argument_Count then
             I := I + 1;
             Dump := To_Unbounded_String (Argument (I));
@@ -124,6 +133,12 @@ begin
    if Length (Attach) > 0 then
       Machine.Attach (To_String (Attach), Ok);
    end if;
+   if Length (Load_Snap) > 0 then
+      Machine.Load_Snapshot (To_String (Load_Snap), Ok);
+      if not Ok then
+         Put_Line (Standard_Error, Machine.Error_Message);
+      end if;
+   end if;
    if Length (File) > 0 then
       Machine.Autostart (To_String (File), Ok);
       if not Ok then
@@ -151,6 +166,9 @@ begin
    Put_Line ("PC=" & Machine.Get_PC'Image & " frames=" &
              Machine.Frame_Count'Image &
              " $01=" & Machine.Peek (1)'Image);
+   if Length (Save_Snap) > 0 then
+      Machine.Save_Snapshot (To_String (Save_Snap), Ok);
+   end if;
    Machine.Shutdown;
    if Length (Dump) > 0 then
       declare

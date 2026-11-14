@@ -14,6 +14,7 @@ package Media is
    procedure Detach;
    function Kind return Media_Kind;
    function Attached_Name return String;
+   function Attached_Path return String;
 
    Host_Dir : access String := null;    --  null = current directory
 

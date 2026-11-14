@@ -100,6 +100,7 @@ package body Media is
 
    function Kind return Media_Kind is (Image_Kind);
    function Attached_Name return String is (To_String (Image_Name));
+   function Attached_Path return String is (To_String (Image_Path));
    function Image_Data return Byte_Array_Access is (Image);
    function Image_Writable return Boolean is (Writable);
 

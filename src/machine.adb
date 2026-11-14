@@ -1206,6 +1206,143 @@ package body Machine is
    end Autostart_Step;
 
    ---------------------------------------------------------------------
+   --  Snapshots
+   ---------------------------------------------------------------------
+
+   Snapshot_Magic : constant String := "ADAC64SNAP2";
+
+   procedure Save_Snapshot (Path : String; Ok : out Boolean) is
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+      S : Stream_Access;
+   begin
+      Create (F, Out_File, Path);
+      S := Stream (F);
+      String'Write (S, Snapshot_Magic);
+      Model_Type'Write (S, Current_Model);
+      String'Output (S, Media.Attached_Path);
+      Byte_Array'Write (S, Mem);
+      Byte_Array'Write (S, Color_RAM);
+      Boolean'Write (S, C64_Mode);
+      Byte'Write (S, Port_DDR); Byte'Write (S, Port_Data);
+      Byte'Write (S, MMU_CR);
+      for P of MMU_PCR loop
+         Byte'Write (S, P);
+      end loop;
+      Byte'Write (S, MMU_MCR); Byte'Write (S, MMU_RCR);
+      Byte'Write (S, MMU_P0L); Byte'Write (S, MMU_P0H);
+      Byte'Write (S, MMU_P1L); Byte'Write (S, MMU_P1H);
+      Byte'Write (S, P0H_Latch); Byte'Write (S, P1H_Latch);
+      CIA.Chip'Write (S, CIA1); CIA.Chip'Write (S, CIA2);
+      Boolean'Write (S, NMI_Prev); Natural'Write (S, Half_Cycle);
+      Natural'Write (S, Frames); Long_Long_Integer'Write (S, Total_Cycles);
+      Boolean'Write (S, Key_4080_Down); Boolean'Write (S, True_Drive);
+      Boolean'Write (S, Drive_On);
+      Boolean'Write (S, Cart_Present); CRT.Image'Write (S, Cart_Info);
+      Natural'Write (S, Cart_Bank); Boolean'Write (S, Cart_Exrom);
+      Boolean'Write (S, Cart_Game); Byte_Array'Write (S, Cart_RAM);
+      Byte'Write (S, CPU.A); Byte'Write (S, CPU.X); Byte'Write (S, CPU.Y);
+      Byte'Write (S, CPU.SP); Word'Write (S, CPU.PC);
+      Byte'Write (S, CPU.Get_P);
+      Boolean'Write (S, CPU.IRQ_Line); Boolean'Write (S, CPU.NMI_Pending);
+      Boolean'Write (S, CPU.Jammed);
+      Boolean'Write (S, IEC.C64_ATN); Boolean'Write (S, IEC.C64_CLK);
+      Boolean'Write (S, IEC.C64_DATA);
+      VIC.Save_State (S);
+      SID.Save_State (S);
+      VDC.Save_State (S);
+      Drive1541.Save_State (S);
+      Close (F);
+      Ok := True;
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         Ok := False;
+   end Save_Snapshot;
+
+   procedure Load_Snapshot (Path : String; Ok : out Boolean) is
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+      S : Stream_Access;
+      Magic : String (Snapshot_Magic'Range);
+      P : Byte;
+   begin
+      Ok := False;
+      Open (F, In_File, Path);
+      S := Stream (F);
+      String'Read (S, Magic);
+      if Magic /= Snapshot_Magic then
+         Close (F);
+         Err := To_Unbounded_String ("Not an AdaC64 snapshot");
+         return;
+      end if;
+      Model_Type'Read (S, Current_Model);
+      declare
+         Disk_Path : constant String := String'Input (S);
+         Attached : Boolean;
+      begin
+         Drive1541.Eject_Disk;
+         if Disk_Path /= "" and then Disk_Path /= Media.Attached_Path then
+            Media.Attach (Disk_Path, Attached);
+            if not Attached then
+               Media.Detach;
+            end if;
+         elsif Disk_Path = "" then
+            Media.Detach;
+         end if;
+      end;
+      Byte_Array'Read (S, Mem);
+      Byte_Array'Read (S, Color_RAM);
+      Boolean'Read (S, C64_Mode);
+      Byte'Read (S, Port_DDR); Byte'Read (S, Port_Data);
+      Byte'Read (S, MMU_CR);
+      for P of MMU_PCR loop
+         Byte'Read (S, P);
+      end loop;
+      Byte'Read (S, MMU_MCR); Byte'Read (S, MMU_RCR);
+      Byte'Read (S, MMU_P0L); Byte'Read (S, MMU_P0H);
+      Byte'Read (S, MMU_P1L); Byte'Read (S, MMU_P1H);
+      Byte'Read (S, P0H_Latch); Byte'Read (S, P1H_Latch);
+      CIA.Chip'Read (S, CIA1); CIA.Chip'Read (S, CIA2);
+      Boolean'Read (S, NMI_Prev); Natural'Read (S, Half_Cycle);
+      Natural'Read (S, Frames); Long_Long_Integer'Read (S, Total_Cycles);
+      Boolean'Read (S, Key_4080_Down); Boolean'Read (S, True_Drive);
+      Boolean'Read (S, Drive_On);
+      Boolean'Read (S, Cart_Present); CRT.Image'Read (S, Cart_Info);
+      Natural'Read (S, Cart_Bank); Boolean'Read (S, Cart_Exrom);
+      Boolean'Read (S, Cart_Game); Byte_Array'Read (S, Cart_RAM);
+      Byte'Read (S, CPU.A); Byte'Read (S, CPU.X); Byte'Read (S, CPU.Y);
+      Byte'Read (S, CPU.SP); Word'Read (S, CPU.PC);
+      Byte'Read (S, P);
+      CPU.Set_P (P);
+      Boolean'Read (S, CPU.IRQ_Line); Boolean'Read (S, CPU.NMI_Pending);
+      Boolean'Read (S, CPU.Jammed);
+      Boolean'Read (S, IEC.C64_ATN); Boolean'Read (S, IEC.C64_CLK);
+      Boolean'Read (S, IEC.C64_DATA);
+      VIC.Load_State (S);
+      SID.Load_State (S);
+      VDC.Load_State (S);
+      Drive1541.Load_State (S);
+      Close (F);
+      IEC.Drive_Present := Drive_On;
+      Keyboard.Release_All;
+      Type_Queue := Null_Unbounded_String;
+      Auto := Idle;
+      Update_VIC_Bank;
+      Rebuild_Map;
+      Ok := True;
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         Err := To_Unbounded_String ("Snapshot could not be read");
+         Ok := False;
+   end Load_Snapshot;
+
+   ---------------------------------------------------------------------
    --  Main loop
    ---------------------------------------------------------------------
 

@@ -66,6 +66,11 @@ package Machine is
    function Drive_Peek (Addr : Natural) return Byte;
    function Debug_Info return String;
 
+   procedure Save_Snapshot (Path : String; Ok : out Boolean);
+   procedure Load_Snapshot (Path : String; Ok : out Boolean);
+   --  Complete machine state (computer, drive, cartridge); call between
+   --  frames.  The attached disk image is re-attached by path.
+
    procedure Shutdown;
    --  Write back any modified disk tracks.
 

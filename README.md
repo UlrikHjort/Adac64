@@ -22,7 +22,7 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 | Part | Notes |
 |------|-------|
 | 6510 / 8502 CPU | All documented and the stable undocumented opcodes, NMOS decimal mode, exact cycle counts. Passes Klaus Dormann's 6502 functional test. |
-| VIC-II (PAL 6569) | Line-based renderer: all text/bitmap modes, ECM, smooth scroll, badlines with cycle stealing, sprites (expand, multicolour, priority, collisions, MSB X), border flip-flops (top/bottom border opening), raster IRQ. |
+| VIC-II (PAL 6569) | Cycle-exact pixel output (mid-line colour/mode splits, side-border opening), all text/bitmap modes, ECM, smooth scroll, badlines with cycle stealing, sprites (expand, multicolour, priority, collisions, MSB X), border flip-flops (top/bottom border opening), raster IRQ. |
 | SID 6581 | 3 voices, all waveforms, ring mod, sync, ADSR with real rate tables, multimode filter, volume-register digis. Output via PulseAudio, which also paces emulation. |
 | CIA 6526 x2 | Timers A/B (all modes), TOD clock with alarm, ICR, keyboard, joysticks, VIC bank select. |
 | C128 MMU | Banking of 128 KB, BASIC/KERNAL/char ROMs, common RAM, zero-page/stack relocation, PCR registers, GO64. |
@@ -61,6 +61,13 @@ Magic Desk, C64 Game System, Dinamic and EasyFlash (read-only flash, 256 bytes
 of RAM at `$DF00`). On a C128 a cartridge makes the KERNAL boot in C64 mode,
 as on the real machine.
 
+### Snapshots
+
+Machine → Save/Load snapshot saves the complete state (computer, 1541 with
+its disk surface, cartridge) to a file; Shift+F9 / Shift+F10 quick-save and
+quick-load `~/.local/share/adac64/quick.a64s`. The attached disk image is
+re-attached by path when loading.
+
 ## Keys
 
 Keyboard mapping is symbolic: type the character you want.
@@ -70,7 +77,8 @@ Esc = RUN/STOP, PgUp = RESTORE, Left Alt = C=, Home = CLR/HOME, Insert = INST,
 Joystick (port 2 by default, changeable in the Input menu): keypad 8/2/4/6 with
 diagonals, fire = keypad 0/5/Enter or Right Ctrl; alternatively the cursor keys.
 
-F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 reset.
+F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 reset,
+Shift+F9 quick save, Shift+F10 quick load.
 Disk images can also be dropped onto the window.
 
 ## Source layout

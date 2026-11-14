@@ -4,6 +4,7 @@
 --  with the computer through Run_Until.
 
 
+with Ada.Streams;
 with Types; use Types;
 
 package Drive1541 is
@@ -41,5 +42,9 @@ package Drive1541 is
    function LED_On return Boolean;
    function Motor_On return Boolean;
    function Current_Track return Natural;    --  1 .. 42 (half tracks rounded)
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   --  Snapshot support (call between frames).
 
 end Drive1541;

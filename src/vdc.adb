@@ -4,7 +4,8 @@ with Video; use Video;
 package body VDC is
 
    VRAM : Byte_Array (0 .. 16#FFFF#) := (others => 0);
-   Regs : array (0 .. 63) of Byte := (others => 0);
+   type Reg_Array is array (0 .. 63) of Byte;
+   Regs : Reg_Array := (others => 0);
    Sel  : Natural := 0;
 
    Frame_Cycle : Natural := 0;
@@ -245,5 +246,23 @@ package body VDC is
          end loop;
       end loop;
    end Render_Frame;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Byte_Array'Write (S, VRAM);
+      Reg_Array'Write (S, Regs);
+      Natural'Write (S, Sel);
+      Natural'Write (S, Frame_Cycle);
+      Natural'Write (S, Frame_Count);
+   end Save_State;
+
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Byte_Array'Read (S, VRAM);
+      Reg_Array'Read (S, Regs);
+      Natural'Read (S, Sel);
+      Natural'Read (S, Frame_Cycle);
+      Natural'Read (S, Frame_Count);
+   end Load_State;
 
 end VDC;

@@ -4,6 +4,7 @@
 --  (Clock is called with the number of elapsed cycles), so register
 --  writes take effect with sample accuracy.
 
+with Ada.Streams;
 with Types; use Types;
 
 package SID is
@@ -23,5 +24,9 @@ package SID is
 
    type Sink_Proc is access procedure (S : Sample);
    Sink : Sink_Proc := null;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   --  Snapshot support (call between frames).
 
 end SID;

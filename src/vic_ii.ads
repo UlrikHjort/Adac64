@@ -1,9 +1,11 @@
 --  MOS 6569 VIC-II (PAL) video chip.
 --
---  Rendering is done one raster line at a time.  Bad lines and sprite DMA
---  steal cycles from the CPU through Stall_Cycles, which the machine
---  consumes before executing the next instruction.
+--  Pixels are produced 8 per cycle as emulated time advances, using the
+--  register values of that moment (sprites are composed per line).  Bad
+--  lines and sprite DMA steal cycles from the CPU through Stall_Cycles,
+--  which the machine consumes before executing the next instruction.
 
+with Ada.Streams;
 with Types; use Types;
 
 generic
@@ -32,5 +34,9 @@ package VIC_II is
    procedure Tick (Cycles : Natural);
    function Read (Reg : Natural) return Byte;
    procedure Write (Reg : Natural; Value : Byte);
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   --  Snapshot support (call between frames).
 
 end VIC_II;

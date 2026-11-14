@@ -1,5 +1,6 @@
 --  MOS 8563 VDC: the C128 80-column video controller.
 
+with Ada.Streams;
 with Types; use Types;
 
 package VDC is
@@ -19,5 +20,9 @@ package VDC is
 
    function Peek_VRAM (Addr : Natural) return Byte;
    function Peek_Reg (N : Natural) return Byte;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   --  Snapshot support (call between frames).
 
 end VDC;

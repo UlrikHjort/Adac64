@@ -2,6 +2,9 @@ with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Fixed;
 with Ada.Characters.Handling;
+with Ada.Directories;
+with Ada.Environment_Variables;
+with Gdk.Types; use type Gdk.Types.Gdk_Modifier_Type;
 with Interfaces; use Interfaces;
 
 with Glib; use Glib;
@@ -60,6 +63,7 @@ package body GUI is
    Item_TDE     : Gtk_Check_Menu_Item;
    Item_C64, Item_C128 : Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
+   Was_VDC : Boolean := False;
 
    Start_Time   : Time := Clock;
    Frames_Run   : Natural := 0;     --  for time-based pacing
@@ -117,7 +121,7 @@ package body GUI is
              (if Show_VDC then "  |  80 col" else "  |  40 col")
           else "") &
          "  |  joy port" & Keyboard.Joystick_Port'Image &
-         "  |  F9 autostart  F10 40/80  F11 warp  F12 reset");
+         "  |  F9 autostart  F10 40/80  F11 warp  F12 reset  Shift+F9/F10 quick save/load");
    end Update_Status;
 
    procedure Sync_Menu is
@@ -153,6 +157,69 @@ package body GUI is
 
    type Ext_List is array (1 .. 4) of String (1 .. 3);
    Extensions : constant Ext_List := ("d64", "t64", "prg", "crt");
+
+   function Choose_Save_File (Title : String) return String is
+      Dlg : Gtk_File_Chooser_Dialog;
+      W : Gtk_Widget;
+      pragma Unreferenced (W);
+      Result : Unbounded_String;
+   begin
+      Gtk_New (Dlg, Title, Win, Gtk.File_Chooser.Action_Save);
+      W := Dlg.Add_Button ("_Cancel", Gtk_Response_Cancel);
+      W := Dlg.Add_Button ("_Save", Gtk_Response_Accept);
+      Gtk.File_Chooser.Set_Do_Overwrite_Confirmation (+Dlg, True);
+      Gtk.File_Chooser.Set_Current_Name (+Dlg, "snapshot.a64s");
+      if Dlg.Run = Gtk_Response_Accept then
+         Result := To_Unbounded_String
+           (Gtk.File_Chooser.Get_Filename (+Dlg));
+      end if;
+      Dlg.Destroy;
+      Keyboard.Release_All;
+      return To_String (Result);
+   end Choose_Save_File;
+
+   function Quick_Snapshot_Path return String is
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else ".");
+      Dir : constant String := Home & "/.local/share/adac64";
+   begin
+      if not Ada.Directories.Exists (Dir) then
+         Ada.Directories.Create_Path (Dir);
+      end if;
+      return Dir & "/quick.a64s";
+   exception
+      when others => return "quick.a64s";
+   end Quick_Snapshot_Path;
+
+   procedure Snapshot_Save (Path : String) is
+      Ok : Boolean;
+   begin
+      if Path /= "" then
+         Machine.Save_Snapshot (Path, Ok);
+         if not Ok then
+            Message ("Could not write snapshot " & Path);
+         end if;
+      end if;
+   end Snapshot_Save;
+
+   procedure Snapshot_Load (Path : String) is
+      Ok : Boolean;
+   begin
+      if Path /= "" then
+         if not Ada.Directories.Exists (Path) then
+            Message ("No snapshot " & Path);
+            return;
+         end if;
+         Machine.Load_Snapshot (Path, Ok);
+         if not Ok then
+            Message ("Could not load snapshot " & Path & ASCII.LF &
+                     Machine.Error_Message);
+         end if;
+         Was_VDC := not Was_VDC;    --  re-evaluate 40/80 view
+         Sync_Menu;
+      end if;
+   end Snapshot_Load;
 
    function Choose_File (Title : String) return String is
       Dlg : Gtk_File_Chooser_Dialog;
@@ -276,6 +343,30 @@ package body GUI is
       Machine.Detach_Cartridge;
       Sync_Menu;
    end On_Detach_Cart;
+
+   procedure On_Save_Snapshot (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Snapshot_Save (Choose_Save_File ("Save snapshot"));
+   end On_Save_Snapshot;
+
+   procedure On_Load_Snapshot (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Snapshot_Load (Choose_File ("Load snapshot"));
+   end On_Load_Snapshot;
+
+   procedure On_Quick_Save (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Snapshot_Save (Quick_Snapshot_Path);
+   end On_Quick_Save;
+
+   procedure On_Quick_Load (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Snapshot_Load (Quick_Snapshot_Path);
+   end On_Quick_Load;
 
    procedure On_Quit (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
@@ -454,6 +545,17 @@ package body GUI is
       KV : constant Interfaces.Unsigned_32 :=
         Interfaces.Unsigned_32 (Event.Keyval);
    begin
+      if (Event.State and Gdk.Types.Shift_Mask) /= 0
+        and then KV in 16#FFC6# | 16#FFC7#
+      then
+         Keyboard.Release_All;
+         if KV = 16#FFC6# then
+            Snapshot_Save (Quick_Snapshot_Path);     --  Shift+F9
+         else
+            Snapshot_Load (Quick_Snapshot_Path);     --  Shift+F10
+         end if;
+         return True;
+      end if;
       case KV is
          when 16#FFC6# =>    --  F9
             Do_Autostart (Choose_File ("Autostart disk/tape/program"));
@@ -526,7 +628,6 @@ package body GUI is
    --  Emulation pacing
    ---------------------------------------------------------------------
 
-   Was_VDC : Boolean := False;
 
    function On_Timer return Boolean is
       Now : constant Time := Clock;
@@ -717,6 +818,12 @@ package body GUI is
                  On_Model'Access);
       Add_Separator (M_Machine);
       Add_Item (M_Machine, "_Reset (F12)", On_Reset'Access);
+      Add_Separator (M_Machine);
+      Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
+      Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);
+      Add_Item (M_Machine, "_Quick save (Shift+F9)", On_Quick_Save'Access);
+      Add_Item (M_Machine, "Quick _load (Shift+F10)", On_Quick_Load'Access);
+      Add_Separator (M_Machine);
       Add_Check (M_Machine, "_Pause", Item_Pause, On_Pause'Access);
       Add_Check (M_Machine, "_Warp mode (F11)", Item_Warp, On_Warp'Access);
       Add_Check (M_Machine, "_Mute sound", Mute, On_Mute'Access);

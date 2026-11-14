@@ -645,6 +645,69 @@ package body Drive1541 is
       end loop;
    end Run_Until;
 
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
+   is
+   begin
+      Byte_Array'Write (S, RAM);
+      VIA.Chip'Write (S, VIA1);
+      VIA.Chip'Write (S, VIA2);
+      Long_Long_Integer'Write (S, Drive_Time);
+      Byte'Write (S, CPU.A); Byte'Write (S, CPU.X); Byte'Write (S, CPU.Y);
+      Byte'Write (S, CPU.SP); Word'Write (S, CPU.PC);
+      Byte'Write (S, CPU.Get_P);
+      Boolean'Write (S, CPU.IRQ_Line); Boolean'Write (S, CPU.NMI_Pending);
+      Boolean'Write (S, CPU.Jammed);
+      Natural'Write (S, Half_Track); Natural'Write (S, Bit_Pos);
+      Natural'Write (S, Bit_Clock); Natural'Write (S, One_Count);
+      Natural'Write (S, Bit_Count); Byte'Write (S, Shift_In);
+      Byte'Write (S, Shift_Out); Boolean'Write (S, Sync);
+      Byte'Write (S, Read_Latch); Boolean'Write (S, Motor_Was_On);
+      Byte'Write (S, Last_Phase);
+      Disk_Kind'Write (S, Disk); Natural'Write (S, Disk_Tracks);
+      for T of Tracks loop
+         Natural'Write (S, T.Len);
+         Boolean'Write (S, T.Dirty);
+         Natural'Write (S, T.File_Offset);
+         if T.Data /= null then
+            Byte_Array'Write (S, T.Data.all);
+         end if;
+      end loop;
+   end Save_State;
+
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
+   is
+      P : Byte;
+   begin
+      Byte_Array'Read (S, RAM);
+      VIA.Chip'Read (S, VIA1);
+      VIA.Chip'Read (S, VIA2);
+      Long_Long_Integer'Read (S, Drive_Time);
+      Byte'Read (S, CPU.A); Byte'Read (S, CPU.X); Byte'Read (S, CPU.Y);
+      Byte'Read (S, CPU.SP); Word'Read (S, CPU.PC);
+      Byte'Read (S, P);
+      CPU.Set_P (P);
+      Boolean'Read (S, CPU.IRQ_Line); Boolean'Read (S, CPU.NMI_Pending);
+      Boolean'Read (S, CPU.Jammed);
+      Natural'Read (S, Half_Track); Natural'Read (S, Bit_Pos);
+      Natural'Read (S, Bit_Clock); Natural'Read (S, One_Count);
+      Natural'Read (S, Bit_Count); Byte'Read (S, Shift_In);
+      Byte'Read (S, Shift_Out); Boolean'Read (S, Sync);
+      Byte'Read (S, Read_Latch); Boolean'Read (S, Motor_Was_On);
+      Byte'Read (S, Last_Phase);
+      Disk_Kind'Read (S, Disk); Natural'Read (S, Disk_Tracks);
+      for T of Tracks loop
+         Natural'Read (S, T.Len);
+         Boolean'Read (S, T.Dirty);
+         Natural'Read (S, T.File_Offset);
+         T.Data := null;
+         if T.Len > 0 then
+            T.Data := new Byte_Array (0 .. T.Len - 1);
+            Byte_Array'Read (S, T.Data.all);
+         end if;
+      end loop;
+      Update_Bus_Outputs;
+   end Load_State;
+
 begin
    for N in Byte range 0 .. 15 loop
       GCR_Decode (GCR_Code (N)) := N;

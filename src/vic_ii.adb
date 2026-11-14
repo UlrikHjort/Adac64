@@ -4,7 +4,8 @@ with Video; use Video;
 package body VIC_II is
    pragma Suppress (All_Checks);
 
-   Regs : array (0 .. 16#3F#) of Byte := (others => 0);
+   type Reg_Array is array (0 .. 16#3F#) of Byte;
+   Regs : Reg_Array := (others => 0);
 
    --  Internal counters
    VC, VC_Base : Natural := 0;
@@ -21,8 +22,9 @@ package body VIC_II is
    Sprite_Bg_Coll     : Byte := 0;
 
    --  Line buffers fetched during bad lines
-   VM_Buf  : array (0 .. 39) of Byte := (others => 0);
-   Col_Buf : array (0 .. 39) of Byte := (others => 0);
+   type Buf40 is array (0 .. 39) of Byte;
+   VM_Buf  : Buf40 := (others => 0);
+   Col_Buf : Buf40 := (others => 0);
 
    --  Sprite state
    type Sprite_State is record
@@ -30,7 +32,8 @@ package body VIC_II is
       MC_Base : Natural := 0;
       Exp_FF  : Boolean := True;
    end record;
-   Sprites : array (0 .. 7) of Sprite_State;
+   type Sprite_Array is array (0 .. 7) of Sprite_State;
+   Sprites : Sprite_Array;
 
    --  Per-line pixel buffers
    subtype Line_X is Natural range 0 .. VIC_Width - 1;
@@ -585,5 +588,63 @@ package body VIC_II is
             end if;
       end case;
    end Write;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Reg_Array'Write (S, Regs);
+      Natural'Write (S, Raster);
+      Natural'Write (S, Line_Cycle);
+      Boolean'Write (S, IRQ);
+      Natural'Write (S, Stall_Cycles);
+      Byte'Write (S, Key_Lines);
+      Boolean'Write (S, Fast_Mode);
+      Boolean'Write (S, Has_C128_Regs);
+      Natural'Write (S, VC);
+      Natural'Write (S, VC_Base);
+      Natural'Write (S, RC);
+      Boolean'Write (S, Display_State);
+      Boolean'Write (S, Bad_Line);
+      Boolean'Write (S, DEN_Latch);
+      Boolean'Write (S, Badline_Checked);
+      Boolean'Write (S, VBorder);
+      Byte'Write (S, IRQ_Flags);
+      Byte'Write (S, IRQ_Enable);
+      Byte'Write (S, Sprite_Sprite_Coll);
+      Byte'Write (S, Sprite_Bg_Coll);
+      Buf40'Write (S, VM_Buf);
+      Buf40'Write (S, Col_Buf);
+      Sprite_Array'Write (S, Sprites);
+      Boolean'Write (S, Main_Border);
+   end Save_State;
+
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class) is
+   begin
+      Reg_Array'Read (S, Regs);
+      Natural'Read (S, Raster);
+      Natural'Read (S, Line_Cycle);
+      Boolean'Read (S, IRQ);
+      Natural'Read (S, Stall_Cycles);
+      Byte'Read (S, Key_Lines);
+      Boolean'Read (S, Fast_Mode);
+      Boolean'Read (S, Has_C128_Regs);
+      Natural'Read (S, VC);
+      Natural'Read (S, VC_Base);
+      Natural'Read (S, RC);
+      Boolean'Read (S, Display_State);
+      Boolean'Read (S, Bad_Line);
+      Boolean'Read (S, DEN_Latch);
+      Boolean'Read (S, Badline_Checked);
+      Boolean'Read (S, VBorder);
+      Byte'Read (S, IRQ_Flags);
+      Byte'Read (S, IRQ_Enable);
+      Byte'Read (S, Sprite_Sprite_Coll);
+      Byte'Read (S, Sprite_Bg_Coll);
+      Buf40'Read (S, VM_Buf);
+      Buf40'Read (S, Col_Buf);
+      Sprite_Array'Read (S, Sprites);
+      Boolean'Read (S, Main_Border);
+      Rendered := 0;
+      G_Valid := (others => False);
+   end Load_State;
 
 end VIC_II;
