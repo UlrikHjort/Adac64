@@ -5,6 +5,7 @@ with MOS6502;
 with VIA;
 with IEC;
 with Media;
+use type Media.Media_Kind;
 
 package body Drive1541 is
 
@@ -19,22 +20,34 @@ package body Drive1541 is
    --  Disk surface
    ---------------------------------------------------------------------
 
+   --  Tracks are indexed by half-track: track T is half-track 2*T.
+   Min_Half : constant := 2;
+   Max_Half : constant := 85;
    Max_Tracks : constant := 42;
    type Track_Data is record
       Data  : Byte_Array_Access := null;
-      Len   : Natural := 0;
+      Len   : Natural := 0;         --  bytes
       Dirty : Boolean := False;
+      File_Offset : Natural := 0;   --  G64: where the track lives in the file
    end record;
-   Tracks : array (1 .. Max_Tracks) of Track_Data;
-   Disk_Present : Boolean := False;
-   Disk_Tracks  : Natural := 0;     --  tracks present in the D64
+   Tracks : array (Min_Half .. Max_Half) of Track_Data;
+
+   type Disk_Kind is (No_Disk, D64_Disk, G64_Disk);
+   Disk : Disk_Kind := No_Disk;
+   Disk_Tracks  : Natural := 0;     --  tracks present in a D64
 
    Half_Track : Natural := 36;      --  track 18
-   Head_Pos   : Natural := 0;       --  byte position on the track
-   Byte_Clock : Natural := 0;
+   Bit_Pos    : Natural := 0;       --  bit position on the current track
+   Bit_Clock  : Natural := 0;       --  in 1/8 cycle units
+   One_Count  : Natural := 0;       --  consecutive 1 bits read
+   Bit_Count  : Natural := 0;       --  bits in the current byte
+   Shift_In   : Byte := 0;
+   Shift_Out  : Byte := 0;
    Sync       : Boolean := False;
    Read_Latch : Byte := 0;
    Motor_Was_On : Boolean := False;
+
+   function Disk_Present return Boolean is (Disk /= No_Disk);
 
    function Sectors_On (Track : Natural) return Natural is
      (if Track <= 17 then 21
@@ -103,7 +116,7 @@ package body Drive1541 is
       Data : constant Byte_Array_Access := new Byte_Array'(0 .. Len - 1 => 0);
       Pos  : Natural := 0;
    begin
-      Tracks (T) := (Data => Data, Len => Len, Dirty => False);
+      Tracks (2 * T) := (Data => Data, Len => Len, others => <>);
       if T > Disk_Tracks then
          return;     --  unformatted: no sync marks
       end if;
@@ -143,103 +156,129 @@ package body Drive1541 is
       end;
    end Build_Track;
 
-   --  Decode a modified track back into the D64 image
+   function Get_Bit (Trk : Track_Data; P : Natural) return Natural is
+      Q : constant Natural := P mod (Trk.Len * 8);
+   begin
+      return Natural (Shift_Right (Trk.Data (Q / 8), 7 - Q mod 8) and 1);
+   end Get_Bit;
+
+   --  Decode GCR bytes (5 GCR bytes -> 4 data bytes)
+   procedure Decode (Src : Byte_Array; Dst : out Byte_Array) is
+      Q : Natural := Src'First;
+      D : Natural := Dst'First;
+      Bits : Unsigned_64;
+   begin
+      while D + 3 <= Dst'Last and then Q + 4 <= Src'Last loop
+         Bits := 0;
+         for K in 0 .. 4 loop
+            Bits := Shift_Left (Bits, 8) or Unsigned_64 (Src (Q + K));
+         end loop;
+         Q := Q + 5;
+         for K in 0 .. 3 loop
+            Dst (D) := Shift_Left
+              (GCR_Decode (Shift_Right (Bits, 35 - K * 10) and 31), 4) or
+              GCR_Decode (Shift_Right (Bits, 30 - K * 10) and 31);
+            D := D + 1;
+         end loop;
+      end loop;
+   end Decode;
+
+   --  Decode a modified (bit-level) track back into the D64 image
    procedure Decode_Track (T : Natural) is
       Img  : constant Byte_Array_Access := Media.Image_Data;
-      Trk  : Track_Data renames Tracks (T);
-      Len  : constant Natural := Trk.Len;
+      Trk  : Track_Data renames Tracks (2 * T);
+      Total : constant Natural := Trk.Len * 8;
       Pending_Sector : Integer := -1;
+      Ones : Natural := 0;
+      P : Natural := 0;
 
-      function At_Pos (P : Natural) return Byte is
-        (Trk.Data (P mod Len));
-
-      procedure Decode (P : Natural; Count : Natural; Dst : out Byte_Array) is
-         Q : Natural := P;
-         D : Natural := Dst'First;
-         Bits : Unsigned_64;
+      --  Read Count framed bytes starting at bit position Start
+      function Read_Bytes (Start, Count : Natural) return Byte_Array is
+         R : Byte_Array (0 .. Count - 1) := (others => 0);
       begin
-         for G in 1 .. Count / 4 loop
-            Bits := 0;
-            for K in 0 .. 4 loop
-               Bits := Shift_Left (Bits, 8) or Unsigned_64 (At_Pos (Q));
-               Q := Q + 1;
-            end loop;
-            for K in 0 .. 3 loop
-               Dst (D) := Shift_Left
-                 (GCR_Decode (Shift_Right (Bits, 35 - K * 10) and 31), 4) or
-                 GCR_Decode (Shift_Right (Bits, 30 - K * 10) and 31);
-               D := D + 1;
+         for I in R'Range loop
+            for B in 0 .. 7 loop
+               R (I) := Shift_Left (R (I), 1) or
+                 Byte (Get_Bit (Trk, Start + I * 8 + B));
             end loop;
          end loop;
-      end Decode;
-
-      P : Natural := 0;
+         return R;
+      end Read_Bytes;
    begin
-      if Img = null or else T > Disk_Tracks then
+      if Img = null or else T > Disk_Tracks or else Trk.Data = null then
          return;
       end if;
-      --  Start on a gap byte before a sync so every sync is seen whole,
-      --  and scan a little beyond one revolution to finish the last block.
-      P := Len - 1;
-      while P > 0 and then At_Pos (P) = 16#FF# loop
-         P := P - 1;
-      end loop;
-      declare
-         Stop : constant Natural := P + Len + 400;
-      begin
-         while P < Stop loop
-            if At_Pos (P) = 16#FF# and then At_Pos (P + 1) = 16#FF# then
-               while At_Pos (P) = 16#FF# and then P < Stop + Len loop
-                  P := P + 1;
-               end loop;
-               declare
-                  First : Byte_Array (0 .. 3);
-               begin
-                  Decode (P, 4, First);
-                  if First (0) = 16#08# then
-                     declare
-                        Hdr : Byte_Array (0 .. 7);
-                     begin
-                        Decode (P, 8, Hdr);
-                        if Natural (Hdr (3)) = T
+      --  One revolution plus a full data block, so a block that starts
+      --  just before the scan origin is decoded after wrapping.
+      while P < Total + 3000 loop
+         if Get_Bit (Trk, P) = 1 then
+            Ones := Ones + 1;
+            P := P + 1;
+         elsif Ones >= 10 then
+            --  End of a sync mark: a block starts at this 0 bit
+            Ones := 0;
+            declare
+               First : Byte_Array (0 .. 3);
+            begin
+               Decode (Read_Bytes (P, 5), First);
+               if First (0) = 16#08# then
+                  declare
+                     Hdr : Byte_Array (0 .. 7);
+                  begin
+                     Decode (Read_Bytes (P, 10), Hdr);
+                     Pending_Sector :=
+                       (if Natural (Hdr (3)) = T
                           and then Natural (Hdr (2)) < Sectors_On (T)
-                        then
-                           Pending_Sector := Integer (Hdr (2));
-                        end if;
-                        P := P + 10;
-                     end;
-                  elsif First (0) = 16#07# and then Pending_Sector >= 0 then
-                     declare
-                        Blk : Byte_Array (0 .. 259);
-                        Off : constant Natural :=
-                          Sector_Offset (T, Natural (Pending_Sector));
-                     begin
-                        Decode (P, 260, Blk);
-                        Img (Off .. Off + 255) := Blk (1 .. 256);
-                        Pending_Sector := -1;
-                        P := P + 325;
-                     end;
-                  else
-                     P := P + 1;
-                  end if;
-               end;
-            else
-               P := P + 1;
-            end if;
-         end loop;
-      end;
+                        then Integer (Hdr (2)) else -1);
+                     P := P + 80;
+                  end;
+               elsif First (0) = 16#07# and then Pending_Sector >= 0 then
+                  declare
+                     Blk : Byte_Array (0 .. 259);
+                     Off : constant Natural :=
+                       Sector_Offset (T, Natural (Pending_Sector));
+                  begin
+                     Decode (Read_Bytes (P, 325), Blk);
+                     Img (Off .. Off + 255) := Blk (1 .. 256);
+                     Pending_Sector := -1;
+                     P := P + 325 * 8;
+                  end;
+               else
+                  P := P + 1;
+               end if;
+            end;
+         else
+            Ones := 0;
+            P := P + 1;
+         end if;
+      end loop;
    end Decode_Track;
 
    procedure Flush is
       Changed : Boolean := False;
+      Img : constant Byte_Array_Access := Media.Image_Data;
    begin
-      if not Disk_Present then
+      if not Disk_Present or else Img = null then
          return;
       end if;
-      for T in Tracks'Range loop
-         if Tracks (T).Dirty then
-            Decode_Track (T);
-            Tracks (T).Dirty := False;
+      for H in Tracks'Range loop
+         if Tracks (H).Dirty then
+            case Disk is
+               when D64_Disk =>
+                  if H mod 2 = 0 then
+                     Decode_Track (H / 2);
+                  end if;
+               when G64_Disk =>
+                  declare
+                     Trk : Track_Data renames Tracks (H);
+                  begin
+                     Img (Trk.File_Offset .. Trk.File_Offset + Trk.Len - 1) :=
+                       Trk.Data.all;
+                  end;
+               when No_Disk =>
+                  null;
+            end case;
+            Tracks (H).Dirty := False;
             Changed := True;
          end if;
       end loop;
@@ -248,33 +287,76 @@ package body Drive1541 is
       end if;
    end Flush;
 
+   function LE16 (D : Byte_Array; I : Natural) return Natural is
+     (Natural (D (I)) + 256 * Natural (D (I + 1)));
+   function LE32 (D : Byte_Array; I : Natural) return Natural is
+     (LE16 (D, I) + 65536 * LE16 (D, I + 2));
+
+   procedure Insert_G64 (Img : Byte_Array) is
+      Count : constant Natural := Natural'Min (Natural (Img (9)), 84);
+   begin
+      for I in 0 .. Count - 1 loop
+         declare
+            Off : constant Natural := LE32 (Img, 12 + 4 * I);
+         begin
+            if Off /= 0 and then Off + 2 <= Img'Last then
+               declare
+                  Len : constant Natural := LE16 (Img, Off);
+               begin
+                  if Len > 0 and then Off + 1 + Len <= Img'Last then
+                     declare
+                        D : constant Byte_Array_Access :=
+                          new Byte_Array (0 .. Len - 1);
+                     begin
+                        D.all := Img (Off + 2 .. Off + 1 + Len);
+                        Tracks (Min_Half + I) :=
+                          (Data => D, Len => Len, Dirty => False,
+                           File_Offset => Off + 2);
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+      Disk := G64_Disk;
+   end Insert_G64;
+
    procedure Insert_Disk is
       Img : constant Byte_Array_Access := Media.Image_Data;
    begin
       Eject_Disk;
-      if Img = null or else Img'Length < 174_848 then
+      if Img = null then
          return;
       end if;
-      Disk_Tracks := (if Img'Length >= 196_608 then 40 else 35);
-      for T in Tracks'Range loop
-         Build_Track (T);
-      end loop;
-      Disk_Present := True;
-      Head_Pos := 0;
+      if Media.Kind = Media.G64 then
+         if Img'Length > 12 + 84 * 8 then
+            Insert_G64 (Img.all);
+         end if;
+      elsif Img'Length >= 174_848 then
+         Disk_Tracks := (if Img'Length >= 196_608 then 40 else 35);
+         for T in 1 .. Max_Tracks loop
+            Build_Track (T);
+         end loop;
+         Disk := D64_Disk;
+      end if;
+      Bit_Pos := 0;
+   exception
+      when others =>
+         Disk := No_Disk;
    end Insert_Disk;
 
    procedure Eject_Disk is
    begin
       Flush;
-      Disk_Present := False;
+      Disk := No_Disk;
       Disk_Tracks := 0;
-      for T in Tracks'Range loop
-         Tracks (T) := (others => <>);
+      for H in Tracks'Range loop
+         Tracks (H) := (others => <>);
       end loop;
    end Eject_Disk;
 
-   function Track_Of_Head return Natural is
-     (if Half_Track mod 2 = 0 then Half_Track / 2 else 0);
+   function Head_Has_Data return Boolean is
+     (Half_Track in Tracks'Range and then Tracks (Half_Track).Data /= null);
 
    ---------------------------------------------------------------------
    --  Disk controller (VIA2) helpers
@@ -282,34 +364,35 @@ package body Drive1541 is
 
    function Motor_On return Boolean is ((VIA.Port_B_Out (VIA2) and 4) /= 0);
    function LED_On return Boolean is ((VIA.Port_B_Out (VIA2) and 8) /= 0);
-   function Current_Track return Natural is ((Half_Track + 1) / 2);
+   function Current_Track return Natural is (Half_Track / 2);
 
    Last_Phase : Byte := 0;
 
    procedure VIA2_Changed is
       Phase : constant Byte := VIA2.ORB and 3;
-      Old_Track : constant Natural := Track_Of_Head;
+      Old_Half : constant Natural := Half_Track;
    begin
       case (Phase - Last_Phase) and 3 is
          when 1 =>
-            if Half_Track < 2 * Max_Tracks then
+            if Half_Track < Max_Half then
                Half_Track := Half_Track + 1;
             end if;
          when 3 =>
-            if Half_Track > 2 then
+            if Half_Track > Min_Half then
                Half_Track := Half_Track - 1;
             end if;
          when others => null;
       end case;
       Last_Phase := Phase;
 
-      if Track_Of_Head /= Old_Track and then Disk_Present then
+      if Half_Track /= Old_Half and then Disk_Present then
          --  Keep the angular position when moving between tracks
-         if Old_Track /= 0 and then Track_Of_Head /= 0 then
-            Head_Pos := Head_Pos * Tracks (Track_Of_Head).Len /
-              Tracks (Old_Track).Len;
+         if Tracks (Old_Half).Data /= null and then Head_Has_Data then
+            Bit_Pos := Natural (Long_Long_Integer (Bit_Pos) *
+                                  Long_Long_Integer (Tracks (Half_Track).Len) /
+                                  Long_Long_Integer (Tracks (Old_Half).Len));
          end if;
-         if Old_Track /= 0 and then Tracks (Old_Track).Dirty then
+         if Tracks (Old_Half).Dirty then
             Flush;
          end if;
       end if;
@@ -390,55 +473,92 @@ package body Drive1541 is
       VIA2.IFR := VIA2.IFR or VIA.IFR_CA1;
    end Byte_Ready;
 
+   --  One bit cell under the head (read or write)
+   procedure Process_Bit is
+   begin
+      if not Head_Has_Data then
+         --  No flux transitions: the controller still frames bytes
+         Sync := False;
+         One_Count := 0;
+         Bit_Count := Bit_Count + 1;
+         if Bit_Count >= 8 then
+            Bit_Count := 0;
+            Read_Latch := 0;
+            Byte_Ready;
+         end if;
+         return;
+      end if;
+
+      declare
+         Trk : Track_Data renames Tracks (Half_Track);
+         Total : constant Natural := Trk.Len * 8;
+      begin
+         if Bit_Pos >= Total then
+            Bit_Pos := 0;
+         end if;
+         if not VIA.CB2_High (VIA2) then
+            --  Write mode: the shift register is reloaded from port A
+            --  every 8 bits, which also signals BYTE READY.
+            if Bit_Count = 0 then
+               Shift_Out := VIA2.ORA;
+               Byte_Ready;
+            end if;
+            declare
+               Mask : constant Byte := Shift_Right (16#80#, Bit_Pos mod 8);
+               Idx  : constant Natural := Bit_Pos / 8;
+            begin
+               if (Shift_Out and 16#80#) /= 0 then
+                  Trk.Data (Idx) := Trk.Data (Idx) or Mask;
+               else
+                  Trk.Data (Idx) := Trk.Data (Idx) and not Mask;
+               end if;
+            end;
+            Shift_Out := Shift_Left (Shift_Out, 1);
+            Bit_Count := (Bit_Count + 1) mod 8;
+            Trk.Dirty := True;
+            Sync := False;
+            One_Count := 0;
+         else
+            declare
+               B : constant Natural := Get_Bit (Trk, Bit_Pos);
+            begin
+               if B = 1 then
+                  One_Count := One_Count + 1;
+               else
+                  One_Count := 0;
+               end if;
+               if One_Count >= 10 then
+                  --  SYNC: byte framing is held in reset
+                  Sync := True;
+                  Bit_Count := 0;
+               else
+                  Sync := False;
+                  Shift_In := Shift_Left (Shift_In, 1) or Byte (B);
+                  Bit_Count := Bit_Count + 1;
+                  if Bit_Count = 8 then
+                     Bit_Count := 0;
+                     Read_Latch := Shift_In;
+                     Byte_Ready;
+                  end if;
+               end if;
+            end;
+         end if;
+         Bit_Pos := (Bit_Pos + 1) mod Total;
+      end;
+   end Process_Bit;
+
    procedure Rotate (Cycles : Natural) is
-      T : constant Natural := Track_Of_Head;
-      Zone : Natural;
-      Per_Byte : Natural;
+      Per_Bit : Natural;     --  1/8 cycles per bit cell
    begin
       if not Disk_Present or else not Motor_On then
          Sync := False;
          return;
       end if;
-      Zone := Natural (Shift_Right (VIA2.ORB, 5) and 3);
-      Per_Byte := 32 - 2 * Zone;
-      Byte_Clock := Byte_Clock + Cycles;
-      while Byte_Clock >= Per_Byte loop
-         Byte_Clock := Byte_Clock - Per_Byte;
-         if T = 0 then
-            --  Between tracks: no flux transitions
-            Sync := False;
-            Read_Latch := 0;
-            Byte_Ready;
-         else
-            declare
-               Trk : Track_Data renames Tracks (T);
-            begin
-               Head_Pos := (Head_Pos + 1) mod Trk.Len;
-               if not VIA.CB2_High (VIA2) then
-                  --  Write mode
-                  Trk.Data (Head_Pos) := VIA.Port_A_Out (VIA2) or
-                    (VIA2.ORA and not VIA2.DDRA);
-                  Trk.Dirty := True;
-                  Sync := False;
-                  Byte_Ready;
-               else
-                  declare
-                     B : constant Byte := Trk.Data (Head_Pos);
-                     Prev : constant Byte :=
-                       Trk.Data ((Head_Pos + Trk.Len - 1) mod Trk.Len);
-                     Next : constant Byte :=
-                       Trk.Data ((Head_Pos + 1) mod Trk.Len);
-                  begin
-                     Sync := B = 16#FF# and then
-                       (Prev = 16#FF# or else Next = 16#FF#);
-                     if not Sync then
-                        Read_Latch := B;
-                        Byte_Ready;
-                     end if;
-                  end;
-               end if;
-            end;
-         end if;
+      Per_Bit := 32 - 2 * Natural (Shift_Right (VIA2.ORB, 5) and 3);
+      Bit_Clock := Bit_Clock + Cycles * 8;
+      while Bit_Clock >= Per_Bit loop
+         Bit_Clock := Bit_Clock - Per_Bit;
+         Process_Bit;
       end loop;
    end Rotate;
 
@@ -480,7 +600,9 @@ package body Drive1541 is
       Update_Bus_Outputs;
       VIA.Set_CA1 (VIA1, IEC.ATN);
       Drive_Time := 0;
-      Byte_Clock := 0;
+      Bit_Clock := 0;
+      Bit_Count := 0;
+      One_Count := 0;
       Sync := False;
       Last_Phase := 0;
       Motor_Was_On := False;

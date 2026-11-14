@@ -56,7 +56,12 @@ package body Media is
       end if;
       Detach;
       Image := Data;
-      if Ends_With (Path, ".d64") or else Data'Length in 174_848 | 175_531
+      if Data'Length > 8 and then Data (0) = Character'Pos ('G')
+        and then Data (1) = Character'Pos ('C')
+        and then Data (2) = Character'Pos ('R')
+      then
+         Image_Kind := G64;
+      elsif Ends_With (Path, ".d64") or else Data'Length in 174_848 | 175_531
         | 196_608 | 197_376
       then
          Image_Kind := D64;
@@ -102,7 +107,9 @@ package body Media is
       use Ada.Streams.Stream_IO;
       F : File_Type;
    begin
-      if Image = null or else Image_Kind /= D64 or else not Writable then
+      if Image = null or else Image_Kind not in D64 | G64
+        or else not Writable
+      then
          return;
       end if;
       Create (F, Out_File, To_String (Image_Path));
@@ -598,6 +605,8 @@ package body Media is
       Found := False;
       Data := null;
       case Image_Kind is
+         when G64 =>
+            null;   --  raw GCR: only readable through the emulated 1541
          when None =>
             if Is_Dir then
                Data := Host_Directory;

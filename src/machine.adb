@@ -677,7 +677,7 @@ package body Machine is
    procedure Update_Drive_State is
       Want : constant Boolean :=
         True_Drive and then Drive1541.ROM_Loaded
-        and then Media.Kind = Media.D64;
+        and then Media.Kind in Media.D64 | Media.G64;
    begin
       if Want and then not Drive_On then
          Drive1541.Reset;
@@ -721,7 +721,7 @@ package body Machine is
    begin
       Drive1541.Eject_Disk;
       Media.Attach (Path, Ok);
-      if Ok and then Media.Kind = Media.D64 then
+      if Ok and then Media.Kind in Media.D64 | Media.G64 then
          Drive1541.Insert_Disk;
       end if;
       Update_Drive_State;
