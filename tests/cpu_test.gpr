@@ -1,0 +1,11 @@
+project CPU_Test is
+   for Source_Dirs use (".", "../src");
+   for Source_Files use ("cpu_test.adb", "types.ads", "mos6502.ads",
+                         "mos6502.adb");
+   for Object_Dir use "../obj/tests";
+   for Exec_Dir use "../bin";
+   for Main use ("cpu_test.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-O2", "-gnat2012");
+   end Compiler;
+end CPU_Test;
