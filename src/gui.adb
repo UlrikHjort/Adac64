@@ -109,6 +109,10 @@ package body GUI is
          (if Warp then " (warp)" else "") &
          (if Paused then "  |  PAUSED" else "") &
          "  |  " & Media_Str &
+         (if Machine.Cartridge_Name /= "" then
+             "  |  cart: " & Ada.Strings.Fixed.Trim
+               (Machine.Cartridge_Name, Ada.Strings.Right)
+          else "") &
          (if Machine.Model = C128 then
              (if Show_VDC then "  |  80 col" else "  |  40 col")
           else "") &
@@ -147,8 +151,8 @@ package body GUI is
       Keyboard.Release_All;
    end Start_Machine;
 
-   type Ext_List is array (1 .. 3) of String (1 .. 3);
-   Extensions : constant Ext_List := ("d64", "t64", "prg");
+   type Ext_List is array (1 .. 4) of String (1 .. 3);
+   Extensions : constant Ext_List := ("d64", "t64", "prg", "crt");
 
    function Choose_File (Title : String) return String is
       Dlg : Gtk_File_Chooser_Dialog;
@@ -161,7 +165,7 @@ package body GUI is
       W := Dlg.Add_Button ("_Cancel", Gtk_Response_Cancel);
       W := Dlg.Add_Button ("_Open", Gtk_Response_Accept);
       Gtk_New (Filter_C64);
-      Filter_C64.Set_Name ("C64 files (d64, t64, prg)");
+      Filter_C64.Set_Name ("C64 files (d64, t64, prg, crt)");
       for Ext of Extensions loop
          Filter_C64.Add_Pattern ("*." & Ext);
          Filter_C64.Add_Pattern ("*." & Ada.Characters.Handling.To_Upper (Ext));
@@ -246,6 +250,32 @@ package body GUI is
       Machine.Detach;
       Update_Status;
    end On_Detach;
+
+   procedure On_Attach_Cart (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+      Path : constant String := Choose_File ("Insert cartridge (.crt)");
+      Ok : Boolean;
+   begin
+      if Path /= "" then
+         begin
+            Machine.Attach_Cartridge (Path, Ok);
+         exception
+            when others => Ok := False;
+         end;
+         if not Ok then
+            Message ("Cannot use cartridge " & Path & ASCII.LF &
+                     Machine.Error_Message);
+         end if;
+         Sync_Menu;
+      end if;
+   end On_Attach_Cart;
+
+   procedure On_Detach_Cart (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Machine.Detach_Cartridge;
+      Sync_Menu;
+   end On_Detach_Cart;
 
    procedure On_Quit (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
@@ -671,6 +701,9 @@ package body GUI is
       Add_Item (M_File, "Attach image to _drive 8...", On_Attach'Access);
       Add_Item (M_File, "D_etach image (use host directory)",
                 On_Detach'Access);
+      Add_Separator (M_File);
+      Add_Item (M_File, "Insert _cartridge...", On_Attach_Cart'Access);
+      Add_Item (M_File, "Remove cartridge", On_Detach_Cart'Access);
       Add_Separator (M_File);
       Add_Check (M_File, "True 1541 drive emulation (D64)", Item_TDE,
                  On_True_Drive'Access);

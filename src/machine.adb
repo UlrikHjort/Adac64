@@ -10,6 +10,8 @@ with SID;
 with VDC;
 with Keyboard;
 with Media;
+with CRT;
+use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
 with IEC;
@@ -31,7 +33,9 @@ package body Machine is
    ROM_C128_BasicHi : constant := 16#2D000#;          --  16K
    ROM_C128_Char    : constant := 16#31000#;          --  4K (C128 half)
    ROM_Empty        : constant := 16#32000#;          --  256 bytes of $FF
-   Mem_Size         : constant := 16#32100#;
+   Write_Sink       : constant := 16#32100#;          --  discarded writes
+   Cart_Base        : constant := 16#32200#;          --  cartridge banks
+   Mem_Size         : constant := Cart_Base + CRT.Max_Banks * CRT.Bank_Size;
 
    Mem : Byte_Array (0 .. Mem_Size - 1) := (others => 16#FF#);
    Color_RAM : Byte_Array (0 .. 2047) := (others => 0);
@@ -70,6 +74,23 @@ package body Machine is
    Kernal_High     : Boolean := True;   --  KERNAL ROM visible at $FFxx
 
    CIA1, CIA2 : CIA.Chip;
+
+   --  Cartridge port
+   Cart_Present : Boolean := False;
+   Cart_Info    : CRT.Image;
+   Cart_Bank    : Natural := 0;
+   Cart_Exrom   : Boolean := False;     --  True = line asserted (low)
+   Cart_Game    : Boolean := False;
+   Cart_RAM     : Byte_Array (0 .. 255) := (others => 0);   --  EasyFlash
+
+   function Ultimax return Boolean is
+     (Cart_Present and then Cart_Game and then not Cart_Exrom);
+   function ROML_Offset return Natural is
+     (Cart_Base + (Cart_Bank mod CRT.Max_Banks) * CRT.Bank_Size);
+   function ROMH_Offset return Natural is
+     (if Cart_Info.Has_ROMH (Cart_Bank mod CRT.Max_Banks)
+      then ROML_Offset + 16#2000#
+      else ROML_Offset);       --  e.g. Ocean: ROMH mirrors the bank
    NMI_Prev : Boolean := False;
    Half_Cycle : Natural := 0;
    Frames : Natural := 0;
@@ -114,12 +135,50 @@ package body Machine is
       LORAM  : constant Boolean := (Lines and 1) /= 0;
       HIRAM  : constant Boolean := (Lines and 2) /= 0;
       CHAREN : constant Boolean := (Lines and 4) /= 0;
+      Exrom  : constant Boolean := Cart_Present and then Cart_Exrom;
+      Game   : constant Boolean := Cart_Present and then Cart_Game;
    begin
       for P in Byte loop
          Read_Map (P) := Natural (P) * 256;
          Write_Map (P) := Natural (P) * 256;
       end loop;
-      if LORAM and then HIRAM then
+      VIC_RAM_Base := 0;
+      VIC_Char_ROM := True;
+      VIC_Char_Base := ROM_C64_Char;
+      CPU_Color_Bank := 0;
+      VIC_Color_Bank := 0;
+
+      if Game and then not Exrom then
+         --  Ultimax: 4K RAM, cartridge ROML/ROMH, I/O, nothing else
+         for P in Byte range 16#10# .. 16#FF# loop
+            Read_Map (P) := ROM_Empty;
+            Write_Map (P) := Write_Sink;
+         end loop;
+         for P in Byte range 16#80# .. 16#9F# loop
+            Read_Map (P) := ROML_Offset + Natural (P - 16#80#) * 256;
+         end loop;
+         for P in Byte range 16#D0# .. 16#DF# loop
+            Read_Map (P) := IO_Page;
+            Write_Map (P) := IO_Page;
+         end loop;
+         for P in Byte range 16#E0# .. 16#FF# loop
+            Read_Map (P) := ROMH_Offset + Natural (P - 16#E0#) * 256;
+         end loop;
+         Kernal_High := False;
+         VIC_Char_ROM := False;
+         return;
+      end if;
+
+      if Exrom and then LORAM and then HIRAM then
+         for P in Byte range 16#80# .. 16#9F# loop
+            Read_Map (P) := ROML_Offset + Natural (P - 16#80#) * 256;
+         end loop;
+      end if;
+      if Exrom and then Game and then HIRAM then
+         for P in Byte range 16#A0# .. 16#BF# loop
+            Read_Map (P) := ROMH_Offset + Natural (P - 16#A0#) * 256;
+         end loop;
+      elsif LORAM and then HIRAM then
          for P in Byte range 16#A0# .. 16#BF# loop
             Read_Map (P) := ROM_C64_Basic + Natural (P - 16#A0#) * 256;
          end loop;
@@ -140,11 +199,6 @@ package body Machine is
          end loop;
       end if;
       Kernal_High := HIRAM;
-      VIC_RAM_Base := 0;
-      VIC_Char_ROM := True;
-      VIC_Char_Base := ROM_C64_Char;
-      CPU_Color_Bank := 0;
-      VIC_Color_Bank := 0;
    end Map_C64;
 
    procedure Map_C128 is
@@ -258,6 +312,10 @@ package body Machine is
    function VIC_Mem (Addr : Word) return Byte is
       A16 : constant Natural := VIC_Bank_Base + Natural (Addr and 16#3FFF#);
    begin
+      --  In Ultimax mode the VIC sees ROMH in the top 4K of each bank
+      if Ultimax and then (Addr and 16#3000#) = 16#3000# then
+         return Mem (ROMH_Offset + 16#1000# + Natural (Addr and 16#0FFF#));
+      end if;
       if VIC_Char_ROM and then (A16 mod 16#8000#) / 16#1000# = 1 then
          return Mem (VIC_Char_Base + A16 mod 16#1000#);
       end if;
@@ -334,7 +392,9 @@ package body Machine is
          when 0 => return MMU_CR;
          when 1 .. 4 => return MMU_PCR (Reg);
          when 5 =>
-            return (MMU_MCR and 16#49#) or 16#36# or
+            return (MMU_MCR and 16#49#) or 16#06# or
+              (if Cart_Present and then Cart_Game then 0 else 16#10#) or
+              (if Cart_Present and then Cart_Exrom then 0 else 16#20#) or
               (if Key_4080_Down then 0 else 16#80#);
          when 6 => return MMU_RCR or 16#30#;
          when 7 => return MMU_P0L;
@@ -370,6 +430,69 @@ package body Machine is
       end case;
       Rebuild_Map;
    end MMU_Write;
+
+   procedure Cart_IO_Write (Addr : Word; Value : Byte) is
+      Old_Bank : constant Natural := Cart_Bank;
+      Old_Lines : constant Boolean := Cart_Exrom xor Cart_Game;
+      Old_E : constant Boolean := Cart_Exrom;
+   begin
+      if not Cart_Present then
+         return;
+      end if;
+      case Cart_Info.Kind is
+         when CRT.Ocean =>
+            if Addr in 16#DE00# .. 16#DEFF# then
+               Cart_Bank := Natural (Value and 16#3F#);
+            end if;
+         when CRT.Magic_Desk =>
+            if Addr in 16#DE00# .. 16#DEFF# then
+               Cart_Bank := Natural (Value and 16#7F#);
+               Cart_Exrom := (Value and 16#80#) = 0;
+            end if;
+         when CRT.Game_System =>
+            if Addr in 16#DE00# .. 16#DEFF# then
+               Cart_Bank := Natural (Addr and 16#3F#);
+            end if;
+         when CRT.Easy_Flash =>
+            if Addr = 16#DE00# then
+               Cart_Bank := Natural (Value and 16#3F#);
+            elsif Addr = 16#DE02# then
+               Cart_Exrom := (Value and 2) /= 0;
+               --  Bit 2 selects whether bit 0 or the boot jumper drives GAME
+               Cart_Game := (if (Value and 4) /= 0 then (Value and 1) /= 0
+                             else True);
+            elsif Addr in 16#DF00# .. 16#DFFF# then
+               Cart_RAM (Natural (Addr and 16#FF#)) := Value;
+            end if;
+         when others =>
+            null;
+      end case;
+      if Cart_Bank /= Old_Bank or else Cart_Exrom /= Old_E
+        or else (Cart_Exrom xor Cart_Game) /= Old_Lines
+      then
+         Rebuild_Map;
+      end if;
+   end Cart_IO_Write;
+
+   function Cart_IO_Read (Addr : Word) return Byte is
+   begin
+      if Cart_Present then
+         case Cart_Info.Kind is
+            when CRT.Dinamic =>
+               if Addr in 16#DE00# .. 16#DEFF# then
+                  Cart_Bank := Natural (Addr and 16#0F#);
+                  Rebuild_Map;
+               end if;
+            when CRT.Easy_Flash =>
+               if Addr in 16#DF00# .. 16#DFFF# then
+                  return Cart_RAM (Natural (Addr and 16#FF#));
+               end if;
+            when others =>
+               null;
+         end case;
+      end if;
+      return 16#FF#;
+   end Cart_IO_Read;
 
    function IO_Read (Addr : Word) return Byte is
       Off : constant Natural := Natural (Addr and 16#FF#);
@@ -412,7 +535,7 @@ package body Machine is
             end if;
             return CIA.Read (CIA2, Off);
          when others =>
-            return 16#FF#;
+            return Cart_IO_Read (Addr);
       end case;
    end IO_Read;
 
@@ -460,7 +583,7 @@ package body Machine is
                Update_IEC_Outputs;
             end if;
          when others =>
-            null;
+            Cart_IO_Write (Addr, Value);
       end case;
    end IO_Write;
 
@@ -604,6 +727,39 @@ package body Machine is
       Update_Drive_State;
    end Attach;
 
+   procedure Attach_Cartridge (Path : String; Ok : out Boolean) is
+      Info : CRT.Image;
+      Data : Byte_Array_Access;
+      procedure Free is new Ada.Unchecked_Deallocation
+        (Byte_Array, Byte_Array_Access);
+   begin
+      CRT.Load (Path, Info, Data, Ok);
+      if Ok and then Info.Kind = CRT.Unsupported then
+         Ok := False;
+         Err := To_Unbounded_String
+           ("Unsupported cartridge hardware type" & Info.Hw_Type'Image);
+      end if;
+      if Ok then
+         Mem (Cart_Base .. Mem'Last) := Data.all;
+         Cart_Info := Info;
+         Cart_Present := True;
+         Reset;
+      end if;
+      if Data /= null then
+         Free (Data);
+      end if;
+   end Attach_Cartridge;
+
+   procedure Detach_Cartridge is
+   begin
+      Cart_Present := False;
+      Cart_Info := (others => <>);
+      Reset;
+   end Detach_Cartridge;
+
+   function Cartridge_Name return String is
+     (if Cart_Present then Cart_Info.Name else "");
+
    procedure Detach is
    begin
       Drive1541.Eject_Disk;
@@ -709,6 +865,13 @@ package body Machine is
       P0H_Latch := 0; P1H_Latch := 0;
       C64_Mode := Current_Model = C64;
 
+      Cart_Bank := 0;
+      Cart_Exrom := Cart_Info.Exrom_Low;
+      Cart_Game := Cart_Info.Game_Low;
+      if Cart_Info.Kind = CRT.Easy_Flash then
+         Cart_Exrom := False;    --  boots in Ultimax mode (boot jumper)
+         Cart_Game := True;
+      end if;
       CIA.Reset (CIA1);
       CIA.Reset (CIA2);
       VIC.Reset;
@@ -950,6 +1113,14 @@ package body Machine is
 
    procedure Autostart (Path : String; Ok : out Boolean) is
    begin
+      if Path'Length > 4 and then
+        (Path (Path'Last - 3 .. Path'Last) = ".crt"
+         or else Path (Path'Last - 3 .. Path'Last) = ".CRT")
+      then
+         Type_Queue := Null_Unbounded_String;
+         Attach_Cartridge (Path, Ok);
+         return;
+      end if;
       Attach (Path, Ok);
       if not Ok then
          return;

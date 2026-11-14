@@ -49,6 +49,14 @@ The ROMs are available from
 T64 and PRG images. With no image attached, drive 8 is always the current host
 directory (`NAME.prg`), and `SAVE"NAME",8` writes `NAME.prg` there.
 
+### Cartridges
+
+`.crt` files (File → Insert cartridge, or pass/drop the file to autostart):
+standard 8K and 16K, Ultimax (VIC fetches from the cartridge), Ocean,
+Magic Desk, C64 Game System, Dinamic and EasyFlash (read-only flash, 256 bytes
+of RAM at `$DF00`). On a C128 a cartridge makes the KERNAL boot in C64 mode,
+as on the real machine.
+
 ## Keys
 
 Keyboard mapping is symbolic: type the character you want.
@@ -67,6 +75,7 @@ Disk images can also be dropped onto the window.
     src/vic_ii.*     VIC-II        src/sid.*      SID
     src/cia.*        CIA           src/vdc.*      VDC
     src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop
+    src/crt.*        CRT cartridge files
     src/media.*      D64/T64/PRG images, fast-load traps, host directory
     src/drive1541.*  1541 drive: CPU, memory map, GCR disk surface
     src/via.*        6522 VIA       src/iec.ads    serial bus lines

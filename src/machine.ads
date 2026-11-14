@@ -50,6 +50,11 @@ package Machine is
    --  Optional explicit 1541 ROM file (16 KB).
 
    procedure Attach (Path : String; Ok : out Boolean);
+
+   procedure Attach_Cartridge (Path : String; Ok : out Boolean);
+   --  Insert a .crt cartridge and reset.
+   procedure Detach_Cartridge;
+   function Cartridge_Name return String;   --  "" when none
    procedure Detach;
    procedure Set_True_Drive (On : Boolean);
    function Drive_Active return Boolean;   --  1541 emulated on the bus now
