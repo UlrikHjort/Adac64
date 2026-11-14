@@ -723,9 +723,12 @@ package body GUI is
          --  Follow the C128 KERNAL's active screen (MODE flag at $D7)
          if Machine.Model = C128 then
             declare
+               --  Under CP/M (Z80) $D7 is not the KERNAL's MODE flag; the
+               --  CP/M BIOS uses the screen selected by the 40/80 key.
                Now_VDC : constant Boolean :=
                  not Machine.In_C64_Mode
-                 and then (Machine.Peek (16#D7#) and 16#80#) /= 0;
+                 and then (if Machine.Z80_Used then Machine.Key_4080_Down
+                           else (Machine.Peek (16#D7#) and 16#80#) /= 0);
             begin
                if Now_VDC /= Was_VDC then
                   Was_VDC := Now_VDC;

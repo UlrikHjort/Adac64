@@ -85,8 +85,11 @@ as on the real machine.
 The C128's Z80 boots CP/M Plus from the official Commodore system disk (a
 D64; available at <https://www.zimmers.net/anonftp/pub/cbm/demodisks/c128/>,
 e.g. `cpm.system.6228151676.d64.gz`). Attach or autostart it on the C128;
-the KERNAL boots it from its boot sector (40 or 80 columns). Loading takes a
-while at 1541 speed; warp (F11) helps.
+the KERNAL boots it from its boot sector (40 or 80 columns, per the 40/80
+key). Autostarting a boot disk runs in warp until the drive is quiet, so the
+`A>` prompt appears after a few seconds instead of ~90 (real 1541 speed):
+
+    bin/adac64 --c128 --80 roms/cpm/cpm.system.6228151676.d64
 
 ### Snapshots
 

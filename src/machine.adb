@@ -56,6 +56,7 @@ package body Machine is
    CPU_Started  : Boolean := True;     --  8502 has left reset
    Z80_Half     : Natural := 0;
    Z80_Frames   : Natural := 0;        --  safety net if the Z80 hangs
+   Z80_Was_Used : Boolean := False;    --  Z80 re-activated after boot
 
    Current_Model : Model_Type := C64;
    C64_Mode      : Boolean := True;    --  memory map is C64 style
@@ -111,7 +112,8 @@ package body Machine is
 
    --  Typing / autostart
    Type_Queue : Unbounded_String;
-   type Auto_State is (Idle, Wait_Ready, Wait_Load, Wait_Check);
+   type Auto_State is (Idle, Wait_Ready, Wait_Load, Wait_Check, Wait_Boot);
+   Quiet_Frames : Natural := 0;
    Auto_Path : Unbounded_String;
    Fast_Frames : Natural := 0;
    Auto : Auto_State := Idle;
@@ -486,6 +488,9 @@ package body Machine is
             elsif Current_Model = C128 then
                if (Value and 1) = 0 then
                   Z80_Active := True;
+                  if CPU_Started then
+                     Z80_Was_Used := True;    --  CP/M and the like
+                  end if;
                else
                   Z80_Active := False;
                   Z80_Frames := 0;
@@ -908,6 +913,7 @@ package body Machine is
    end Set_True_Drive;
 
    function Drive_Active return Boolean is (Drive_On);
+   function Z80_Used return Boolean is (Z80_Was_Used);
    function Drive_ROM_Found return Boolean is (Drive1541.ROM_Loaded);
    function Drive_LED return Boolean is (Drive_On and then Drive1541.LED_On);
    function Drive_Motor return Boolean is
@@ -1033,6 +1039,7 @@ package body Machine is
       --  A C128 powers up with the Z80 running its BIOS, which then hands
       --  the bus to the 8502 (see MMU_Write).
       Z80_Active := Current_Model = C128;
+      Z80_Was_Used := False;
       CPU_Started := Current_Model /= C128;
    end Reset;
 
@@ -1293,8 +1300,11 @@ package body Machine is
       begin
          Auto_Path := To_Unbounded_String (Path);
          if Current_Model = C128 and then Media.Has_Boot_Sector then
-            --  Boot disk (e.g. CP/M): the KERNAL boots it by itself
-            Auto := Idle;
+            --  Boot disk (e.g. CP/M): the KERNAL boots it by itself; stay
+            --  "busy" (the GUI warps) until the drive has been quiet.
+            Auto := Wait_Boot;
+            Auto_Frames := 0;
+            Quiet_Frames := 0;
             return;
          elsif Current_Model = C128 then
             --  DLOAD like a C128 user (some loaders read its buffer)
@@ -1328,7 +1338,7 @@ package body Machine is
    end Autostart;
 
    function Autostart_Busy return Boolean is
-     (Auto in Wait_Ready | Wait_Load);
+     (Auto in Wait_Ready | Wait_Load | Wait_Boot);
 
    procedure Autostart_Step is
    begin
@@ -1353,6 +1363,14 @@ package body Machine is
                           and then not Key_4080_Down
                         then Wait_Check else Idle);
                Auto_Frames := 0;
+            end if;
+         when Wait_Boot =>
+            Auto_Frames := Auto_Frames + 1;
+            Quiet_Frames := (if Drive_Motor then 0 else Quiet_Frames + 1);
+            if (Auto_Frames > 300 and then Quiet_Frames > 150)
+              or else Auto_Frames > 15_000
+            then
+               Auto := Idle;
             end if;
          when Wait_Check =>
             --  An 80-column program started in 40-column mode usually
@@ -1382,7 +1400,7 @@ package body Machine is
    --  Snapshots
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP3";
+   Snapshot_Magic : constant String := "ADAC64SNAP4";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;
@@ -1422,6 +1440,7 @@ package body Machine is
       Boolean'Write (S, IEC.C64_ATN); Boolean'Write (S, IEC.C64_CLK);
       Boolean'Write (S, IEC.C64_DATA);
       Boolean'Write (S, Z80_Active); Boolean'Write (S, CPU_Started);
+      Boolean'Write (S, Z80_Was_Used);
       Natural'Write (S, Z80_Half);
       ZCPU.Save_State (S);
       VIC.Save_State (S);
@@ -1498,6 +1517,7 @@ package body Machine is
       Boolean'Read (S, IEC.C64_ATN); Boolean'Read (S, IEC.C64_CLK);
       Boolean'Read (S, IEC.C64_DATA);
       Boolean'Read (S, Z80_Active); Boolean'Read (S, CPU_Started);
+      Boolean'Read (S, Z80_Was_Used);
       Natural'Read (S, Z80_Half);
       ZCPU.Load_State (S);
       VIC.Load_State (S);

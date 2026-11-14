@@ -62,7 +62,9 @@ package Machine is
    function Cartridge_Name return String;   --  "" when none
    procedure Detach;
    procedure Set_True_Drive (On : Boolean);
-   function Drive_Active return Boolean;   --  1541 emulated on the bus now
+   function Drive_Active return Boolean;
+   function Z80_Used return Boolean;
+   --  True when the C128's Z80 took over after boot (e.g. CP/M runs).   --  1541 emulated on the bus now
    function Drive_ROM_Found return Boolean;
    function Drive_LED return Boolean;
    function Drive_Motor return Boolean;
