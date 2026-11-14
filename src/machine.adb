@@ -694,6 +694,9 @@ package body Machine is
       end;
       Free (Data);
       Trap_Return (True);
+   exception
+      when others =>
+         Trap_Return (False, 4);   --  malformed image: FILE NOT FOUND
    end Trap_Load;
 
    procedure Trap_Save is
@@ -720,6 +723,9 @@ package body Machine is
          Media.Save_File (Read_Name, Data, Ok);
       end;
       Trap_Return (Ok, 5);    --  DEVICE NOT PRESENT on failure
+   exception
+      when others =>
+         Trap_Return (False, 5);
    end Trap_Save;
 
    ---------------------------------------------------------------------

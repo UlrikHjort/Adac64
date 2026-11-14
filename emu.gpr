@@ -9,7 +9,7 @@ project Emu is
    package Compiler is
       for Default_Switches ("Ada") use
         ("-O2", "-gnatn", "-gnat2012", "-gnatwa", "-gnatwK",
-         "-gnatp", "-g");
+         "-g");
    end Compiler;
 
    package Binder is

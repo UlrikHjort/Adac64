@@ -2,6 +2,7 @@ with Interfaces; use Interfaces;
 with Video; use Video;
 
 package body VIC_II is
+   pragma Suppress (All_Checks);
 
    Regs : array (0 .. 16#3F#) of Byte := (others => 0);
 

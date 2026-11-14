@@ -1,6 +1,7 @@
 with Interfaces; use Interfaces;
 
 package body MOS6502 is
+   pragma Suppress (All_Checks);
 
    type Mnemonic is
      (ADC, AND_Op, ASL, BCC, BCS, BEQ, BIT_Op, BMI, BNE, BPL, BRK, BVC, BVS,

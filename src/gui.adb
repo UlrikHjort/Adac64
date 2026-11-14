@@ -2,7 +2,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Fixed;
 with Ada.Characters.Handling;
-with Interfaces;
+with Interfaces; use Interfaces;
 
 with Glib; use Glib;
 with Glib.Main;
@@ -176,7 +176,11 @@ package body GUI is
       if Path = "" then
          return;
       end if;
-      Machine.Autostart (Path, Ok);
+      begin
+         Machine.Autostart (Path, Ok);
+      exception
+         when others => Ok := False;
+      end;
       if not Ok then
          Message ("Cannot open " & Path);
       end if;
@@ -190,7 +194,11 @@ package body GUI is
       if Path = "" then
          return;
       end if;
-      Media.Attach (Path, Ok);
+      begin
+         Media.Attach (Path, Ok);
+      exception
+         when others => Ok := False;
+      end;
       if not Ok then
          Message ("Cannot open " & Path);
       end if;
@@ -520,9 +528,19 @@ package body GUI is
       end if;
 
       if Ran > 0 then
-         if Machine.Model = C128 and then Machine.Key_4080_Down /= Was_VDC
-         then
-            Was_VDC := Machine.Key_4080_Down;
+         --  Follow the C128 KERNAL's active screen (MODE flag at $D7)
+         if Machine.Model = C128 then
+            declare
+               Now_VDC : constant Boolean :=
+                 not Machine.In_C64_Mode
+                 and then (Machine.Peek (16#D7#) and 16#80#) /= 0;
+            begin
+               if Now_VDC /= Was_VDC then
+                  Was_VDC := Now_VDC;
+                  Show_VDC := Now_VDC;
+                  Sync_Menu;
+               end if;
+            end;
          end if;
          if Show_VDC then
             Blit.Copy (Blit.VDC_Screen, VDC_Surf);

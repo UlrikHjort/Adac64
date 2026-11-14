@@ -2,6 +2,7 @@ with Interfaces; use Interfaces;
 with Ada.Numerics.Elementary_Functions; use Ada.Numerics.Elementary_Functions;
 
 package body SID is
+   pragma Suppress (All_Checks);
 
    Regs : array (0 .. 31) of Byte := (others => 0);
 
