@@ -866,7 +866,7 @@ package body Media is
          Ok := False;
    end Save_File;
 
-   function Start_Program_Name return String is
+   function Start_Program_Name (For_C128 : Boolean := False) return String is
       Result : Unbounded_String;
       Found  : Boolean := False;
 
@@ -877,7 +877,9 @@ package body Media is
          Off : constant Integer := Sector_Offset (Track, Sector);
       begin
          if (File_Type and 7) = 2 and then Off >= 0
-           and then Disk (Off + 2) = 16#01# and then Disk (Off + 3) = 16#08#
+           and then Disk (Off + 2) = 16#01#
+           and then (if For_C128 then Disk (Off + 3) in 16#1C# | 16#40#
+                     else Disk (Off + 3) = 16#08#)
          then
             for B of Name loop
                Append (Result,
@@ -897,6 +899,37 @@ package body Media is
    exception
       when others => return "";
    end Start_Program_Name;
+
+   function First_Program_Name return String is
+      Result : Unbounded_String;
+      Clean  : Boolean := True;
+
+      procedure Visit (File_Type : Byte; Track, Sector : Natural;
+                       Name : Byte_Array; Blocks : Natural;
+                       Stop : in out Boolean) is
+         pragma Unreferenced (Track, Sector, Blocks);
+      begin
+         if (File_Type and 7) = 2 then
+            for B of Name loop
+               if B in 16#20# .. 16#5F# and then B /= 16#22# then
+                  Append (Result, Character'Val (B));
+               else
+                  Clean := False;
+               end if;
+            end loop;
+            Stop := True;
+         end if;
+      end Visit;
+   begin
+      if Image_Kind not in D64 | G64 or else Disk = null then
+         return "*";
+      end if;
+      Walk_Directory (Visit'Unrestricted_Access);
+      return (if Clean and then Length (Result) > 0 then To_String (Result)
+              else "*");
+   exception
+      when others => return "*";
+   end First_Program_Name;
 
    function First_Load_Address return Word is
       Data : Byte_Array_Access;

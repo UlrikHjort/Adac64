@@ -22,6 +22,7 @@
 with Ada.Command_Line; use Ada.Command_Line;
 with Ada.Text_IO; use Ada.Text_IO;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Strings.Fixed;
 with Types;
 with Machine;
 with Blit;
@@ -230,6 +231,13 @@ begin
       Wav_Sink.Save (To_String (Wav));
    end if;
    if Machine.VDC_Enabled then
-      Blit.Save_PNG (Blit.VDC_Screen, "vdc_" & To_String (PNG));
+      declare
+         P : constant String := To_String (PNG);
+         Slash : constant Natural :=
+           Ada.Strings.Fixed.Index (P, "/", Ada.Strings.Backward);
+      begin
+         Blit.Save_PNG (Blit.VDC_Screen,
+                        P (P'First .. Slash) & "vdc_" & P (Slash + 1 .. P'Last));
+      end;
    end if;
 end AdaC64;

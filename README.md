@@ -12,6 +12,13 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
     bin/adac64 game.d64   # autostart (also .t64 / .prg)
     make tests            # keyboard + CPU tests
 
+Autostart types what a user would: `LOAD"name",8,1` + `RUN` on the C64, and
+`DLOAD"name"` + `RUN` (or `BLOAD` + `SYS`) on the C128, using the first
+program's real name. If the first file is data, the first BASIC program on
+the disk is started instead. On the C128, a program that asks for an
+80-column screen, or runs in FAST mode with the 40-column display, is
+restarted automatically with the 40/80 key down.
+
 Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 (insert without autostart), and for testing `--headless N` (run N frames, save
 `shot.png` / `vdc_shot.png`), `--png FILE`, `--type "TEXT\n"`, `--wav FILE`,

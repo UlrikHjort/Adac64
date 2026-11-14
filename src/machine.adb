@@ -101,7 +101,9 @@ package body Machine is
 
    --  Typing / autostart
    Type_Queue : Unbounded_String;
-   type Auto_State is (Idle, Wait_Ready, Wait_Load);
+   type Auto_State is (Idle, Wait_Ready, Wait_Load, Wait_Check);
+   Auto_Path : Unbounded_String;
+   Fast_Frames : Natural := 0;
    Auto : Auto_State := Idle;
    Auto_Command : Unbounded_String;
    Auto_Frames : Natural := 0;
@@ -1119,6 +1121,10 @@ package body Machine is
                for K in Text'Range loop
                   if (Get (Start + K - Text'First) and 16#7F#) /=
                     Code (Text (K))
+                    and then not (Text (K) in 'A' .. 'Z' | 'a' .. 'z'
+                                  and then (Get (Start + K - Text'First)
+                                              and 16#7F#) =
+                                    Code (Text (K)) + 64)
                   then
                      Hit := False;
                      exit;
@@ -1161,31 +1167,38 @@ package body Machine is
       Reset;
       Type_Queue := Null_Unbounded_String;
       declare
-         LA : constant Word := Media.First_Load_Address;
-         Cmd : Unbounded_String;
+         LA   : constant Word := Media.First_Load_Address;
+         Name : constant String := Media.First_Program_Name;
+         Q    : constant String := """" & Name & """";
+         Cmd  : Unbounded_String;
+         NL   : constant Character := ASCII.LF;
+         function Addr return String is (Natural'Image (Natural (LA)));
       begin
+         Auto_Path := To_Unbounded_String (Path);
          if Current_Model = C128 then
-            if LA = 16#1C01# or else LA = 0 then
-               Cmd := To_Unbounded_String ("LOAD""*"",8" & ASCII.LF & "RUN"
-                                           & ASCII.LF);
+            --  DLOAD like a C128 user (some loaders read its buffer)
+            if LA in 16#1C01# | 16#4001# | 16#1201# or else LA = 0 then
+               Cmd := To_Unbounded_String ("DLOAD" & Q & NL & "RUN" & NL);
+            elsif Media.Start_Program_Name (For_C128 => True) /= "" then
+               Cmd := To_Unbounded_String
+                 ("DLOAD""" & Media.Start_Program_Name (For_C128 => True) &
+                  """" & NL & "RUN" & NL);
             else
                Cmd := To_Unbounded_String
-                 ("BLOAD""*"",U8" & ASCII.LF & "SYS" &
-                  Natural'Image (Natural (LA)) & ASCII.LF);
+                 ("BLOAD" & Q & ",U8" & NL &
+                  (if LA >= 16#4000# then "BANK0:SYS" else "SYS") & Addr & NL);
             end if;
          elsif LA = 16#0801# or else LA = 0 then
-            Cmd := To_Unbounded_String ("LOAD""*"",8,1" & ASCII.LF & "RUN"
-                                        & ASCII.LF);
+            Cmd := To_Unbounded_String ("LOAD" & Q & ",8,1" & NL & "RUN" & NL);
          elsif LA >= 16#2000# and then Media.Start_Program_Name /= "" then
             --  First file looks like data (e.g. a game part loaded high):
             --  start the first BASIC program on the disk instead.
             Cmd := To_Unbounded_String
-              ("LOAD""" & Media.Start_Program_Name & """,8" & ASCII.LF &
-               "RUN" & ASCII.LF);
+              ("LOAD""" & Media.Start_Program_Name & """,8" & NL &
+               "RUN" & NL);
          else
-            Cmd := To_Unbounded_String ("LOAD""*"",8,1" & ASCII.LF & "SYS" &
-                                        Natural'Image (Natural (LA)) &
-                                        ASCII.LF);
+            Cmd := To_Unbounded_String
+              ("LOAD" & Q & ",8,1" & NL & "SYS" & Addr & NL);
          end if;
          Auto_Command := Cmd;
       end;
@@ -1193,7 +1206,8 @@ package body Machine is
       Auto_Frames := 0;
    end Autostart;
 
-   function Autostart_Busy return Boolean is (Auto /= Idle);
+   function Autostart_Busy return Boolean is
+     (Auto in Wait_Ready | Wait_Load);
 
    procedure Autostart_Step is
    begin
@@ -1209,9 +1223,35 @@ package body Machine is
          when Wait_Load =>
             Auto_Frames := Auto_Frames + 1;
             --  Done once everything typed (including RUN) was consumed
-            if Length (Type_Queue) = 0 and then Auto_Frames > 10
-              and then Bus_Read (if C64_Mode then 16#C6# else 16#D0#) = 0
+            if (Length (Type_Queue) = 0 and then Auto_Frames > 10
+                and then Bus_Read (if C64_Mode then 16#C6# else 16#D0#) = 0)
+              or else Auto_Frames > 600
             then
+               Fast_Frames := 0;
+               Auto := (if Current_Model = C128 and then not C64_Mode
+                          and then not Key_4080_Down
+                        then Wait_Check else Idle);
+               Auto_Frames := 0;
+            end if;
+         when Wait_Check =>
+            --  An 80-column program started in 40-column mode usually
+            --  says so; restart it with the 40/80 key down.
+            Auto_Frames := Auto_Frames + 1;
+            --  FAST (2 MHz) blanks the 40-column screen: a program running
+            --  in FAST mode for a while is meant for the 80-column screen.
+            Fast_Frames := (if VIC.Fast_Mode then Fast_Frames + 1 else 0);
+            if Fast_Frames > 250
+              or else Screen_Contains ("80 COL") or else Screen_Contains ("80-COL")
+              or else Screen_Contains ("80 ZEICHEN")
+              or else Screen_Contains ("80 SPALTEN")
+            then
+               Key_4080_Down := True;
+               declare
+                  Ok : Boolean;
+               begin
+                  Autostart (To_String (Auto_Path), Ok);
+               end;
+            elsif Auto_Frames > 400 then
                Auto := Idle;
             end if;
       end case;

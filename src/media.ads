@@ -42,8 +42,12 @@ package Media is
 
    function First_Load_Address return Word;
 
-   function Start_Program_Name return String;
-   --  D64 only: name of the first PRG that loads at $0801, or "".
+   function Start_Program_Name (For_C128 : Boolean := False) return String;
+   --  D64/G64: name of the first BASIC PRG ($0801, or $1C01/$4001 for the
+   --  C128), or "".
+
+   function First_Program_Name return String;
+   --  D64/G64: name of the first PRG ("*" if unknown or unprintable).
    --  Load address of the first file on the attached medium (0 if none).
 
 end Media;
