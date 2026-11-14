@@ -58,6 +58,9 @@ package Machine is
    function Drive_Motor return Boolean;
    function Drive_Track return Natural;
 
+   function Drive_Peek (Addr : Natural) return Byte;
+   function Debug_Info return String;
+
    procedure Shutdown;
    --  Write back any modified disk tracks.
 

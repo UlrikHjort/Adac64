@@ -1,6 +1,5 @@
 with Ada.Streams.Stream_IO;
 with Interfaces; use Interfaces;
-with Types; use Types;
 
 with MOS6502;
 with VIA;
@@ -470,6 +469,8 @@ package body Drive1541 is
    end Load_ROM;
 
    function ROM_Loaded return Boolean is (Have_ROM);
+   function Peek_RAM (Addr : Natural) return Byte is (RAM (Addr mod 2048));
+   function Get_PC return Word is (CPU.PC);
 
    procedure Reset is
    begin
@@ -503,6 +504,17 @@ package body Drive1541 is
    begin
       while Drive_Time < Target loop
          CPU.IRQ_Line := VIA.IRQ (VIA1) or else VIA.IRQ (VIA2);
+         --  Do not start an instruction whose bus access (its last cycle)
+         --  would happen at or after the target time: the computer has not
+         --  reached that moment yet.
+         if not (CPU.IRQ_Line and then not CPU.Flag_I) then
+            declare
+               Need : constant Natural :=
+                 CPU.Base_Cycles (Drive_Read (CPU.PC));
+            begin
+               exit when Drive_Time + Long_Long_Integer (Need) - 1 >= Target;
+            end;
+         end if;
          CPU.Step (N);
          VIA.Tick (VIA1, N);
          VIA.Tick (VIA2, N);

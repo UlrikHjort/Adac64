@@ -250,6 +250,8 @@ package body MOS6502 is
       PC := Make_Word (Read (Vector), Read (Vector + 1));
    end Interrupt;
 
+   function Base_Cycles (Op : Byte) return Natural is (Cycles_Base (Op));
+
    procedure Reset is
    begin
       A := 0; X := 0; Y := 0;

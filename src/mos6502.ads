@@ -30,6 +30,9 @@ package MOS6502 is
    --  Base cycle count of the instruction being executed (valid during
    --  Step, so bus handlers can estimate when an access happens).
 
+   function Base_Cycles (Op : Byte) return Natural;
+   --  Cycle count of an opcode without page-cross / branch penalties.
+
    procedure Reset;
    --  Load PC from the reset vector and initialise registers.
 

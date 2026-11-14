@@ -10,6 +10,7 @@
 --    --headless N       run N frames without GUI, then save screenshots
 --    --png FILE         screenshot file for headless mode (default shot.png)
 --    --type TEXT        type TEXT after boot (use \n for RETURN)
+--    --type-at F TEXT   type TEXT at frame F (repeatable)
 --    --dump FILE        headless: write the 64 KB CPU view of memory
 --    --wav FILE         headless: record SID output to a WAV file
 
@@ -34,6 +35,12 @@ procedure AdaC64 is
    Wav      : Unbounded_String;
    Attach   : Unbounded_String;
    Dump     : Unbounded_String;
+   type Timed_Text is record
+      Frame : Natural := 0;
+      Text  : Unbounded_String;
+   end record;
+   Timed : array (1 .. 16) of Timed_Text;
+   Timed_Count : Natural := 0;
    I        : Positive := 1;
    Ok       : Boolean;
 
@@ -76,6 +83,12 @@ begin
          elsif A = "--drive-rom" and then I < Argument_Count then
             I := I + 1;
             Machine.Drive_ROM_Path := To_Unbounded_String (Argument (I));
+         elsif A = "--type-at" and then I + 1 < Argument_Count then
+            Timed_Count := Timed_Count + 1;
+            Timed (Timed_Count) :=
+              (Natural'Value (Argument (I + 1)),
+               To_Unbounded_String (Unescape (Argument (I + 2))));
+            I := I + 2;
          elsif A = "--dump" and then I < Argument_Count then
             I := I + 1;
             Dump := To_Unbounded_String (Argument (I));
@@ -123,6 +136,11 @@ begin
    begin
       for F in 1 .. Headless loop
          Machine.Run_Frame;
+         for T of Timed (1 .. Timed_Count) loop
+            if T.Frame = F then
+               Machine.Type_Text (To_String (T.Text));
+            end if;
+         end loop;
          if not Typed and then Machine.Screen_Contains ("READY.") then
             Machine.Type_Text (To_String (Text));
             Typed := True;
@@ -142,9 +160,13 @@ begin
          for A in 0 .. 65535 loop
             Put (F, Character'Val (Machine.Peek (Machine_Word (A))));
          end loop;
+         for A in 0 .. 2047 loop
+            Put (F, Character'Val (Machine.Drive_Peek (A)));
+         end loop;
          Close (F);
       end;
    end if;
+   Put_Line (Machine.Debug_Info);
    Put_Line ("drive: active=" & Machine.Drive_Active'Image & " track=" &
              Machine.Drive_Track'Image & " motor=" &
              Machine.Drive_Motor'Image);

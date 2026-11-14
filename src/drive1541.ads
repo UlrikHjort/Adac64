@@ -4,6 +4,8 @@
 --  with the computer through Run_Until.
 
 
+with Types; use Types;
+
 package Drive1541 is
 
    procedure Load_ROM (Path : String; Ok : out Boolean);
@@ -30,6 +32,11 @@ package Drive1541 is
 
    procedure ATN_Changed;
    --  The computer changed the ATN line (drives VIA1 CA1).
+
+   function Peek_RAM (Addr : Natural) return Byte;
+   --  Drive RAM (debugging).
+
+   function Get_PC return Word;
 
    function LED_On return Boolean;
    function Motor_On return Boolean;

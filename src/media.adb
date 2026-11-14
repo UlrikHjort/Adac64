@@ -437,10 +437,15 @@ package body Media is
    ---------------------------------------------------------------------
 
    function T64_Entries return Natural is
+     --  "Used entries" ($24) is often 0 in real files: fall back to the
+     --  maximum entry count ($22).
      (if Image'Length < 64 then 0
-      else Natural'Min (Natural (Image (16#24#)) +
-                          256 * Natural (Image (16#25#)),
-                        (Image'Length - 64) / 32));
+      else Natural'Min
+        (Natural'Max (Natural (Image (16#24#)) +
+                        256 * Natural (Image (16#25#)),
+                      Natural (Image (16#22#)) +
+                        256 * Natural (Image (16#23#))),
+         (Image'Length - 64) / 32));
 
    procedure T64_Entry (I : Natural; Start_Addr, End_Addr : out Natural;
                         Offset : out Natural; Used : out Boolean) is

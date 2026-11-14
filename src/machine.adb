@@ -620,6 +620,18 @@ package body Machine is
      (Drive_On and then Drive1541.Motor_On);
    function Drive_Track return Natural is (Drive1541.Current_Track);
 
+   NMI_Count, IRQ_Count : Natural := 0;
+   Last_NMI_PC : Word := 0;
+
+   function Debug_Info return String is
+     ("nmi=" & NMI_Count'Image & " (last from" & Last_NMI_PC'Image & ")" &
+      " irq=" & IRQ_Count'Image & " jam=" & CPU.Jammed'Image &
+      " drivePC=" & Drive1541.Get_PC'Image &
+      " cia2 mask=" & CIA2.ICR_Mask'Image & " flags=" & CIA2.ICR_Flags'Image);
+
+   function Drive_Peek (Addr : Natural) return Byte is
+     (Drive1541.Peek_RAM (Addr));
+
    procedure Shutdown is
    begin
       Drive1541.Flush;
@@ -1031,6 +1043,11 @@ package body Machine is
             NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
             if NMI_Now and then not NMI_Prev then
                CPU.NMI_Pending := True;
+               NMI_Count := NMI_Count + 1;
+               Last_NMI_PC := CPU.PC;
+            end if;
+            if CPU.IRQ_Line and then not CPU.Flag_I then
+               IRQ_Count := IRQ_Count + 1;
             end if;
             NMI_Prev := NMI_Now;
 
