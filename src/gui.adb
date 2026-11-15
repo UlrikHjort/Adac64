@@ -65,6 +65,12 @@ package body GUI is
    Win      : Gtk_Window;
    Bar      : Gtk_Menu_Bar;
    Is_Fullscreen : Boolean := False;
+
+   --  Window size: the picture at about 2.5x plus menu and status line
+   Default_Width  : constant := 960;
+   Default_Height : constant := 740;
+   Min_Width      : constant := 640;
+   Min_Height     : constant := 480;
    Integer_Scale : Boolean := False;
    CRT_Filter    : Boolean := False;
    Last_Dir      : Unbounded_String;
@@ -632,7 +638,11 @@ package body GUI is
          W, H : Gint;
       begin
          Win.Get_Size (W, H);
-         if not Is_Fullscreen then
+         --  Only a size the user can have chosen: not while hidden (e.g.
+         --  closed from Forge), fullscreen or collapsed to the minimum
+         if not Is_Fullscreen and then Win.Get_Visible
+           and then W >= Min_Width and then H >= Min_Height
+         then
             Settings.Set ("width", Integer (W));
             Settings.Set ("height", Integer (H));
          end if;
@@ -1312,8 +1322,16 @@ package body GUI is
 
       Gtk_New (Win);
       Win.Set_Title ("AdaC64");
-      Win.Set_Default_Size (Gint (Settings.Get ("width", 800)),
-                            Gint (Settings.Get ("height", 640)));
+      declare
+         W : Integer := Settings.Get ("width", Default_Width);
+         H : Integer := Settings.Get ("height", Default_Height);
+      begin
+         if W < Min_Width or else H < Min_Height then
+            W := Default_Width;          --  a tiny saved size is no choice
+            H := Default_Height;
+         end if;
+         Win.Set_Default_Size (Gint (W), Gint (H));
+      end;
       Win.On_Destroy (On_Destroy'Access);
       Win.On_Delete_Event (On_Win_Delete'Access);
       Win.On_Key_Press_Event (On_Key_Press'Access);
