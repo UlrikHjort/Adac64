@@ -15,6 +15,7 @@ tests: all
 	bin/debug_test
 	bin/sprite_test
 	bin/charset_test
+	bin/screen_test
 	sh tests/basic_test.sh
 	@if [ -f $(KLAUS) ]; then bin/cpu_test $(KLAUS); else \
 	  echo "Skipping CPU test: put Klaus Dormann's 6502_functional_test.bin in tests/"; fi

@@ -85,7 +85,8 @@ procedure AdaC64 is
         (L'Length > E'Length and then L (L'Last - E'Length + 1 .. L'Last) = E);
    begin
       return Asm.Is_Source (Path) or else Basic.Is_Source (Path)
-        or else Ends (".spr") or else Ends (".chr") or else Ends (".64c");
+        or else Ends (".spr") or else Ends (".chr") or else Ends (".64c")
+        or else Ends (".scr");
    end Forge_File_Type;
 
    function Unescape (S : String) return String is

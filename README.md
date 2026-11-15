@@ -261,6 +261,27 @@ its multicolour mode and colours. `.chr` files are the raw 2048 bytes
 (`!binary "font.chr"` at a 2 KB boundary); *Export .asm* writes one `!byte`
 line per character.
 
+### Screen editor
+
+Forge → Tools → Screen editor (Ctrl+R), or open a `.scr` file: a 40 x 25
+text screen with a colour per cell, drawn with the charset of the charset
+editor (the two share it, so redrawn characters show up at once; *ROM
+upper* / *ROM lower* switch to the built-in sets). Pick a character from
+the 16 x 16 table and a colour, then use the tools: *Draw* (right button
+draws spaces), *Colour* (colours only), *Fill*, *Text* (click a cell and
+type; lower case gives normal letters, R toggles reverse), *Pick*
+(eyedropper), *Copy area* (drag) and *Paste area* (click). The status line
+shows the cell under the mouse with its screen address. Undo is Ctrl+Z,
+G toggles a grid. Multicolour charsets are shown as the VIC shows them
+(cells with colours 8-15).
+
+*Show in emulator* / *Live in emulator* put the screen (and, with *with
+charset*, the charset) on the C64's display; *Grab from emulator* takes a
+running program's text screen together with its charset and colours.
+`.scr` files hold 1000 screen codes, 1000 colours, border and background
+(2002 bytes; plain 1000-byte screens load too); *Export .asm* writes
+`name_chars` / `name_colors` tables and the two colours as constants.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -307,8 +328,10 @@ Disk images can also be dropped onto the window.
     src/forge.*      Forge window    src/source_view.*  GtkSourceView binding
     src/sprite_*     sprite editor (data model / window)
     src/charset_*    charset editor (data model / window)
+    src/screen_*     screen editor (data model / window)
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
-    tests/           CPU, keyboard, debugger, sprite and BASIC tests,
+    tests/           CPU, keyboard, debugger, sprite, charset, screen
+                     and BASIC tests,
                      mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py

@@ -54,6 +54,7 @@ with Settings;
 with Source_View;
 with Sprite_Editor;
 with Charset_Editor;
+with Screen_Editor;
 use type Source_View.Language;
 with Interfaces; use Interfaces;
 
@@ -368,7 +369,7 @@ package body Forge is
            (new String'("*.asm"), new String'("*.a"), new String'("*.s"),
             new String'("*.a65"), new String'("*.inc"), new String'("*.src"),
             new String'("*.bas"), new String'("*.spr"), new String'("*.chr"),
-            new String'("*.64c"))
+            new String'("*.64c"), new String'("*.scr"))
          loop
             Filter_Src.Add_Pattern (P.all);
          end loop;
@@ -970,7 +971,7 @@ package body Forge is
       A_Undo, A_Redo, A_Close,
       A_Build, A_Run, A_Rebuild_Run, A_Pause, A_Step_Into, A_Step_Over,
       A_Step_Out, A_Run_To_Cursor, A_Toggle_BP, A_Clear_BPs, A_Reset,
-      A_Emulator, A_Sprites, A_Charset, A_Help);
+      A_Emulator, A_Sprites, A_Charset, A_Screen, A_Help);
 
    procedure Do_Action (A : Action) is
       T : constant Natural := Current_Tab;
@@ -1023,6 +1024,8 @@ package body Forge is
                      Sprite_Editor.Open (Win, P);
                   elsif Charset_Editor.Is_Charset_File (P) then
                      Charset_Editor.Open (Win, P);
+                  elsif Screen_Editor.Is_Screen_File (P) then
+                     Screen_Editor.Open (Win, P);
                   else
                      Dummy := Open_Path (P) > 0;
                   end if;
@@ -1137,6 +1140,8 @@ package body Forge is
             Sprite_Editor.Open (Win);
          when A_Charset =>
             Charset_Editor.Open (Win);
+         when A_Screen =>
+            Screen_Editor.Open (Win);
          when A_Help =>
             Print ("F5 build & run / continue   Ctrl+F5 rebuild & run   " &
                    "F6 pause   F7 build");
@@ -1433,6 +1438,7 @@ package body Forge is
       M := Menu ("_Tools");
       Item (M, "_Sprite editor", A_Sprites, GDK_LC_e, Control_Mask);
       Item (M, "_Charset editor", A_Charset, GDK_LC_k, Control_Mask);
+      Item (M, "Sc_reen editor", A_Screen, GDK_LC_r, Control_Mask);
       M := Menu ("_Help");
       Item (M, "_Keys and syntax", A_Help, GDK_F1);
 
@@ -1580,6 +1586,8 @@ package body Forge is
                Sprite_Editor.Open (Win, Full);
             elsif Charset_Editor.Is_Charset_File (Full) then
                Charset_Editor.Open (Win, Full);
+            elsif Screen_Editor.Is_Screen_File (Full) then
+               Screen_Editor.Open (Win, Full);
             elsif Ada.Directories.Exists (Full) then
                Dummy := Open_Path (Full);
                Main_File := To_Unbounded_String (Full);
