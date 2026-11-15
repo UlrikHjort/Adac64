@@ -1453,7 +1453,7 @@ package body GUI is
       Add_Radio (M_Input, "Paddles on the joystick (left/right, up/down)",
                  Paddle_Group, Paddle_Items (Paddles.Joystick),
                  On_Paddles'Access);
-      Add_Radio (M_Input, "VIC-20 light pen on the mouse (hold the button)",
+      Add_Radio (M_Input, "Light pen on the mouse (hold the button)",
                  Paddle_Group, Paddle_Items (Paddles.Light_Pen),
                  On_Paddles'Access);
       Add_Separator (M_Input);

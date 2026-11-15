@@ -16,7 +16,7 @@
 --    --mkd64 OUT FILE.. write a new D64 with the files (name = file name)
 --    --forge [SRC]     open the forge (assembler IDE and debugger)
 --    --paddles off|mouse|joystick  paddle input (default: last used)
---    --pen FX FY        headless: VIC-20 light pen pressed at FX, FY (0..1)
+--    --pen FX FY        headless: light pen pressed at FX, FY (0..1)
 --    --paddle-pos FX FY  headless: mouse position (0..1) for mouse paddles
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)

@@ -124,10 +124,11 @@ raw 512K flash image or a VICE `.crt`) get its 512K RAM and 512K flash
 not written back to the file) with the registers at `$9C02`/`$9C03` and
 all the RAM / ROM modes. `tests/vic20_fe.asm` and the Mega-Cart test give
 the same results here as in VICE. Input →
-*VIC-20 light pen on the mouse* turns the mouse into a light pen: while
-the left button is held (pen against the screen) the VIC latches the beam
-position into `$9006`/`$9007` when the beam passes the pen, and the pen's
-switch shows on the fire line. Snapshots (Machine menu, Shift+F9 /
+*Light pen on the mouse* turns the mouse into a light pen: while the left
+button is held (pen against the screen) the VIC latches the beam position
+into `$9006`/`$9007` when the beam passes the pen, and the pen's switch
+shows on the fire line (the C64 / C128 light pen is described below).
+Snapshots (Machine menu, Shift+F9 /
 Shift+F10) work on the VIC-20 too, including the RAM expansion and a
 cartridge, Mega-Cart or Final Expansion.
 
@@ -141,6 +142,15 @@ paddle 2 and fire is paddle 1's button. The VIC-20 reads them at
 read through the SID at `$D419`/`$D41A` when CIA1 selects that port. While
 paddles are on, the joystick lines carry only the paddle buttons (left =
 paddle 1, right = paddle 2), as with real paddles.
+
+**Light pen on the C64 / C128** (Input → *Light pen on the mouse*,
+`--pen FX FY` headless): a pen in control port 1 with its button on "up",
+like VICE's default pen. While the left mouse button is held the VIC-II
+latches the beam position under the mouse into `$D013` (x / 2 in sprite
+coordinates) and `$D014` (raster line) once per frame and sets IRQ bit 3
+in `$D019`. Pulling the LP input low (CIA1 port B bit 4: joystick 1 fire,
+or a program driving the port) latches the beam position too, as on the
+real machine; `tests/c64_pen.asm` checks both.
 
 ### Drive 8
 

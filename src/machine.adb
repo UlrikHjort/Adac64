@@ -587,9 +587,20 @@ package body Machine is
 
    --  Joystick bits of a control port; with paddles in that port only
    --  their buttons (on the left / right lines)
+   --  (a light pen sits in port 1, its button on "up" as VICE's default
+   --  pen type)
    function Port_Joy (Port : Natural) return Byte is
      (if Paddles.Active and then Port = Paddle_Port then Paddles.Fire_Bits
-      elsif Port = 1 then Keyboard.Joy1 else Keyboard.Joy2);
+      elsif Port = 1 then Keyboard.Joy1
+        or (if Paddles.Pen_Active and then Paddles.Pen_Down then 1 else 0)
+      else Keyboard.Joy2);
+
+   --  The VIC-II's LP input is CIA1 port B bit 4 (joystick 1 fire)
+   procedure Check_LP_Line is
+   begin
+      VIC.Set_LP_Line
+        (((CIA.Port_B_Out (CIA1) and not Port_Joy (1)) and 16#10#) = 0);
+   end Check_LP_Line;
 
    --  SID POTX / POTY: CIA1 port A bits 6 / 7 select which control port
    --  the SID reads
@@ -1080,6 +1091,9 @@ package body Machine is
               Value and 16#0F#;
          when 16#DC00# .. 16#DCFF# =>
             CIA.Write (CIA1, Off, Value);
+            if Off mod 16 in 1 | 3 then
+               Check_LP_Line;
+            end if;
             --  C128 fast serial: a byte shifted out (FSDIR = output) goes
             --  to a 1571
             if Off mod 16 = 12 and then Current_Model = C128
@@ -3080,6 +3094,10 @@ package body Machine is
       if Current_Model = VIC20 then
          V20.Set_Light_Pen (Paddles.Pen_X, Paddles.Pen_Y,
                             Paddles.Pen_Active and then Paddles.Pen_Down);
+      else
+         VIC.Set_Light_Pen (Paddles.Pen_X, Paddles.Pen_Y,
+                            Paddles.Pen_Active and then Paddles.Pen_Down);
+         Check_LP_Line;
       end if;
       Autostart_Step;
       Frames := Frames + 1;

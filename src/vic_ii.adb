@@ -62,6 +62,53 @@ package body VIC_II is
       Update_IRQ;
    end Raise_IRQ;
 
+   ---------------------------------------------------------------------
+   --  Light pen
+   ---------------------------------------------------------------------
+
+   Pen_On : Boolean := False;
+   Pen_Line, Pen_Cycle : Natural := 0;
+   Pen_X : Byte := 0;
+   LP_Low : Boolean := False;
+   LP_Triggered : Boolean := False;   --  latched in this frame
+
+   procedure Latch_Pen (X : Byte; Y : Natural) is
+   begin
+      if LP_Triggered then
+         return;
+      end if;
+      LP_Triggered := True;
+      Regs (16#13#) := X;
+      Regs (16#14#) := Byte (Y mod 256);
+      Raise_IRQ (16#08#);
+   end Latch_Pen;
+
+   --  X position (sprite coordinates / 2) of the beam at Line_Cycle:
+   --  framebuffer x = 8 * Line_Cycle - 100, sprite x = framebuffer x - 8
+   function Beam_X return Byte is
+     (Byte (((8 * Line_Cycle + 504 - 108) mod 504) / 2 mod 256));
+
+   procedure Set_Light_Pen (FX, FY : Float; On : Boolean) is
+      function Clamp (F : Float) return Float is
+        (Float'Max (0.0, Float'Min (0.999, F)));
+      Px : constant Natural :=
+        Natural (Clamp (FX) * Float (VIC_Visible_Width));
+   begin
+      Pen_On := On;
+      Pen_Line := First_Visible_Line
+        + Natural (Clamp (FY) * Float (VIC_Visible_Lines));
+      Pen_Cycle := (Px + 100) / 8;
+      Pen_X := Byte ((if Px >= 8 then (Px - 8) / 2 else 0) mod 256);
+   end Set_Light_Pen;
+
+   procedure Set_LP_Line (Low : Boolean) is
+   begin
+      if Low and then not LP_Low then
+         Latch_Pen (Beam_X, Raster);
+      end if;
+      LP_Low := Low;
+   end Set_LP_Line;
+
    procedure Reset is
    begin
       Regs := (others => 0);
@@ -79,6 +126,8 @@ package body VIC_II is
       Sprites := (others => <>);
       Key_Lines := 16#FF#;
       Fast_Mode := False;
+      LP_Low := False;
+      LP_Triggered := False;
    end Reset;
 
    ---------------------------------------------------------------------
@@ -462,6 +511,10 @@ package body VIC_II is
       if Raster >= Lines_Per_Frame then
          Raster := 0;
          Frame_Done := True;
+         LP_Triggered := False;
+         if LP_Low then
+            Latch_Pen ((if Cycles_Per_Line = 65 then 16#D5# else 16#D1#), 0);
+         end if;
       end if;
    end End_Line;
 
@@ -472,6 +525,11 @@ package body VIC_II is
          if not Badline_Checked and then Line_Cycle >= 12 then
             Badline_Checked := True;
             Check_Bad_Line;
+         end if;
+         if Pen_On and then not LP_Triggered and then Raster = Pen_Line
+           and then Line_Cycle >= Pen_Cycle
+         then
+            Latch_Pen (Pen_X, Raster);     --  the pen sees the beam
          end if;
          if Line_Cycle >= 13 then
             Render_Pixels
@@ -547,7 +605,7 @@ package body VIC_II is
          when 16#1A# =>
             IRQ_Enable := Value and 16#0F#;
             Update_IRQ;
-         when 16#1E# | 16#1F# =>
+         when 16#13# | 16#14# | 16#1E# | 16#1F# =>
             null;
          when 16#2F# =>
             Key_Lines := Value;

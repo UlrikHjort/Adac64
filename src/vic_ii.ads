@@ -35,6 +35,16 @@ package VIC_II is
    function Read (Reg : Natural) return Byte;
    procedure Write (Reg : Natural; Value : Byte);
 
+   procedure Set_Light_Pen (FX, FY : Float; On : Boolean);
+   --  A light pen at FX / FY (0 .. 1) across the shown picture: while On
+   --  the VIC latches the beam position into $D013 / $D014 (and raises
+   --  IRQ bit 3) when the beam passes the pen, once per frame
+
+   procedure Set_LP_Line (Low : Boolean);
+   --  The LP input (CIA1 port B bit 4 / joystick 1 fire): going low
+   --  latches the current beam position, once per frame; still low at the
+   --  start of a frame latches again there (as in VICE)
+
    procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
    procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
    --  Snapshot support (call between frames).

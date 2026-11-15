@@ -10,6 +10,12 @@ $B --asm tests/c64_paddles.asm -o $T/c.prg >/dev/null
 R=$($B --c64 --paddles mouse --paddle-pos 0.25 0.75 --headless 300 --png $T/s.png --monitor "m fb fc" $T/c.prg | grep '^00FB' | cut -c7-11)
 [ "$R" = "BF 40" ] || fail "C64 ($R)"
 echo "paddles: C64 POTX/POTY read 191 / 64"
+# C64 light pen in the middle of the picture (x 184 / 2, line 152), then
+# the LP input pulled low by the program at line 100
+$B --asm tests/c64_pen.asm -o $T/pen.prg >/dev/null
+R=$($B --c64 --pen 0.5 0.5 --headless 300 --png $T/s.png --monitor "m fb fe" $T/pen.prg | grep '^00FB' | cut -c7-17)
+[ "$R" = "5C 98 64 08" ] || fail "C64 light pen ($R)"
+echo "paddles: C64 light pen latched x \$5C, y \$98; LP input at line \$64"
 if [ -f roms/vic20/basic.901486-01.bin ]; then
   $B --asm tests/vic20_paddles.asm -o $T/v.prg >/dev/null
   R=$($B --vic20 --paddles mouse --paddle-pos 0.25 0.75 --headless 300 --png $T/s.png --monitor "m fb fc" $T/v.prg | grep '^00FB' | cut -c7-11)
