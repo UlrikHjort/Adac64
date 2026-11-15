@@ -891,7 +891,8 @@ package body Forge is
          Update_Title;
       end if;
       Out_Buf.Set_Text ("");
-      Print ("assembling " & To_String (Main_File));
+      Print ("assembling "
+             & Ada.Directories.Simple_Name (To_String (Main_File)));
       Print ("");
       Asm.Report := Report'Access;
       Asm.Build (To_String (Main_File), PRG, Ok);

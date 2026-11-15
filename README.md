@@ -5,6 +5,17 @@ Ada 2012 with GtkAda, with Forge, an assembler IDE, debugger and graphics editor
 The Commodore ROMs are not included; see [ROMs](#roms) for which files are
 needed and where they go.
 
+![The emulator running a raster-bar demo assembled in Forge](docs/screenshots/emulator.png)
+
+| | |
+|---|---|
+| ![C64](docs/screenshots/c64.png) | ![C128 in 80 columns](docs/screenshots/c128_80col.png) |
+| Commodore 64 | Commodore 128, 80 columns (VDC) |
+| ![VIC-20](docs/screenshots/vic20.png) | ![Plus/4](docs/screenshots/plus4.png) |
+| VIC-20 | Plus/4: the TED's 121 colours |
+| ![PET 4032](docs/screenshots/pet.png) | ![Bitmap editor](docs/screenshots/bitmap_editor.png) |
+| PET 4032: DIRECTORY through the IEEE-488 drive | Forge's bitmap editor: an imported picture in multicolour |
+
 ## ROMs
 
 The machines need the original Commodore ROMs. They are still under
@@ -339,6 +350,11 @@ the machine your programs run on (F12 brings it up; closing Forge
 quits). `bin/adac64` alone is just the emulator. Forge is a 6502 editor with syntax highlighting (GtkSourceView), an
 assembler, and a source-level debugger working on the running machine.
 
+![Forge stopped at a breakpoint in examples/rasterbars.asm](docs/screenshots/forge.png)
+
+The program in the screenshot is `examples/rasterbars.asm`: open it with
+`bin/adac64-forge examples/rasterbars.asm` and press F5.
+
 | Key | | Key | |
 |---|---|---|---|
 | F5 | build and run, or continue when stopped | F9 | toggle breakpoint (or click the gutter) |
@@ -494,6 +510,8 @@ such a disk and loads the program from it through the emulated drive.
 
 ### Bitmap editor
 
+![The bitmap editor with an imported picture in multicolour](docs/screenshots/bitmap_editor.png)
+
 Forge → Tools → Bitmap editor (Ctrl+B), or open a Koala (`.kla`, `.koa`),
 Art Studio (`.art`) or Doodle (`.dd`) picture. Pictures stay in the C64's
 own format, so the VIC-II's limits always hold: hires is 320 x 200 with
@@ -608,6 +626,8 @@ Disk images can also be dropped onto the window.
     src/bitmap_*     bitmap editor (data model / window)
     src/disk_image.* D64 writer
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
+    examples/        rasterbars.asm (the Forge screenshot)
+    docs/screenshots/  the README's pictures
     tests/           CPU, keyboard, debugger, sprite, charset, screen,
                      bitmap,
                      BASIC and disk tests,
