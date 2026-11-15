@@ -9,7 +9,8 @@ with Video; use Video;
 package body Blit is
 
    function Width (S : Source) return Natural is
-     (case S is when VIC_Screen => VIC_Width, when VDC_Screen => VDC_Width);
+     (case S is when VIC_Screen => VIC_Visible_Width,
+                when VDC_Screen => VDC_Width);
    function Height (S : Source) return Natural is
      (case S is when VIC_Screen => VIC_Visible_Lines,
                 when VDC_Screen => VDC_Height);

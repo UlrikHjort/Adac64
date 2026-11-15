@@ -453,7 +453,10 @@ begin
                end;
             end if;
          end loop;
-         if not Typed and then Machine.Screen_Contains ("READY.") then
+         --  (a VIC-20 is at READY before the 1541 has started up)
+         if not Typed and then Machine.Screen_Contains ("READY.")
+           and then (Machine."/=" (Model, Machine.VIC20) or else F > 100)
+         then
             Machine.Type_Text (To_String (Text));
             Typed := True;
          end if;

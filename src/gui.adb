@@ -43,6 +43,7 @@ with Audio;
 with SID;
 use type SID.Chip_Model;
 with Blit;
+with Video;
 with Monitor;
 with Forge;
 with Settings;
@@ -881,16 +882,18 @@ package body GUI is
       SW : constant Float := Float (Blit.Width (Src));
       SH : constant Float := Float (Blit.Height (Src));
       Y_Aspect : constant Float := (if Show_VDC then 2.0 else 1.0);
-      Fit : constant Float := Float'Min (W / SW, H / (SH * Y_Aspect));
+      X_Aspect : constant Float := (if Show_VDC then 1.0 else Video.X_Aspect);
+      Fit : constant Float :=
+        Float'Min (W / (SW * X_Aspect), H / (SH * Y_Aspect));
       Scale : constant Float :=
         (if Integer_Scale and then Fit >= 1.0 then Float'Floor (Fit) else Fit);
-      OX : constant Float := Float'Floor ((W - SW * Scale) / 2.0);
+      OX : constant Float := Float'Floor ((W - SW * Scale * X_Aspect) / 2.0);
       OY : constant Float := Float'Floor ((H - SH * Scale * Y_Aspect) / 2.0);
    begin
       Set_Source_Rgb (Cr, 0.0, 0.0, 0.0);
       Paint (Cr);
       Translate (Cr, Gdouble (OX), Gdouble (OY));
-      Cairo.Scale (Cr, Gdouble (Scale), Gdouble (Scale * Y_Aspect));
+      Cairo.Scale (Cr, Gdouble (Scale * X_Aspect), Gdouble (Scale * Y_Aspect));
       Rectangle (Cr, 0.0, 0.0, Gdouble (SW), Gdouble (SH));
       Clip (Cr);
       Set_Source_Surface (Cr, Surf, 0.0, 0.0);
@@ -906,7 +909,7 @@ package body GUI is
             for Y in 0 .. Natural (SH) - 1 loop
                Rectangle (Cr, Gdouble (OX),
                           Gdouble (OY + (Float (Y) + 0.55) * LH),
-                          Gdouble (SW * Scale), Gdouble (0.45 * LH));
+                          Gdouble (SW * Scale * X_Aspect), Gdouble (0.45 * LH));
             end loop;
          end;
          Fill (Cr);
@@ -1398,10 +1401,9 @@ package body GUI is
       Status.Set_Margin_Start (6);
       VBox.Pack_Start (Status, Expand => False, Fill => False, Padding => 2);
 
-      VIC_Surf := Cairo.Image_Surface.Create
+      VIC_Surf := Cairo.Image_Surface.Create      --  largest size of any model
         (Cairo.Image_Surface.Cairo_Format_RGB24,
-         Gint (Blit.Width (Blit.VIC_Screen)),
-         Gint (Blit.Height (Blit.VIC_Screen)));
+         Gint (Video.VIC_Width), Gint (Video.FB_Lines));
       VDC_Surf := Cairo.Image_Surface.Create
         (Cairo.Image_Surface.Cairo_Format_RGB24,
          Gint (Blit.Width (Blit.VDC_Screen)),

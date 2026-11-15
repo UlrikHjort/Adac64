@@ -9,8 +9,13 @@ package Video is
    VIC_Height : constant := 272;
    First_Visible_Line : Natural := 16;    --  NTSC: 14
    VIC_Visible_Lines  : Natural := VIC_Height;   --  NTSC: 249
+   VIC_Visible_Width  : Natural := VIC_Width;    --  VIC-20: 284 / 260
+   X_Aspect : Float := 1.0;
+   --  Width of a framebuffer pixel relative to its height (the VIC-20's
+   --  pixels are almost twice as wide as the C64's)
 
-   type VIC_Frame is array (0 .. VIC_Height - 1, 0 .. VIC_Width - 1) of Pixel;
+   FB_Lines : constant := 288;        --  room for the VIC-20's 284 lines
+   type VIC_Frame is array (0 .. FB_Lines - 1, 0 .. VIC_Width - 1) of Pixel;
    VIC_FB : VIC_Frame := (others => (others => 0));
 
    --  VDC (8563) output: up to 640 x 200 text/bitmap area plus border

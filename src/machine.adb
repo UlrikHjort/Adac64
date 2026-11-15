@@ -1639,6 +1639,8 @@ package body Machine is
       VDC.Set_Frame_Cycles (VIC.Cycles_Per_Line * VIC.Lines_Per_Frame);
       Video.First_Visible_Line := (if V = PAL then 16 else 14);
       Video.VIC_Visible_Lines := (if V = PAL then Video.VIC_Height else 249);
+      Video.VIC_Visible_Width := Video.VIC_Width;
+      Video.X_Aspect := 1.0;
    end Set_Video_Standard;
 
    function Standard return Video_Standard is (Current_Standard);

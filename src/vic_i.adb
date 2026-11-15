@@ -17,17 +17,19 @@ package body VIC_I is
       16#CA5400#, 16#E9B072#, 16#E79293#, 16#9AF7FD#,
       16#E09FFF#, 16#8FE493#, 16#8290FF#, 16#E5DE85#);
 
-   --  Part of the picture that is shown: Win_Width VIC pixels (drawn
-   --  two framebuffer pixels wide) from Win_X, lines from Win_Y
-   Win_Width : constant := 192;
-   function Win_X return Natural is (if Standard = PAL then 40 else 12);
-   function Win_Y return Natural is (if Standard = PAL then 32 else 12);
+   --  Part of the picture that is shown, as in VICE: the whole line
+   --  (4 pixels per cycle) and the lines from Win_Y on
+   function Win_Y return Natural is (28);
 
    procedure Set_Standard (S : Standard_Kind) is
    begin
       Standard := S;
       Video.First_Visible_Line := 0;
-      Video.VIC_Visible_Lines := (if S = PAL then 272 else 249);
+      Video.VIC_Visible_Lines := (if S = PAL then 284 else 233);
+      Video.VIC_Visible_Width := (if S = PAL then 284 else 260);
+      --  pixel width / height: dot clock 4.43 MHz (PAL) or 4.09 MHz (NTSC)
+      --  against the 7.88 / 8.18 MHz of the C64 the window is made for
+      Video.X_Aspect := (if S = PAL then 1.78 else 2.0);
       Cycle := 0;
       Line := 0;
    end Set_Standard;
@@ -123,6 +125,8 @@ package body VIC_I is
    --  Registers
    ---------------------------------------------------------------------
 
+   procedure Reset_Video;
+
    procedure Reset is
    begin
       Regs := (others => 0);
@@ -130,6 +134,7 @@ package body VIC_I is
       Cycle := 0;
       Frame_Done := False;
       Voices := (others => <>);
+      Reset_Video;
    end Reset;
 
    function Raster return Natural is (Line);
@@ -167,100 +172,156 @@ package body VIC_I is
    --  Video
    ---------------------------------------------------------------------
 
-   procedure Draw_Line (L : Natural) is
+   --  Drawing follows the beam: every CPU cycle puts 4 pixels of the
+   --  current line on screen with the registers as they are then.  The
+   --  text area works like the chip (and VICE): while idle the vertical
+   --  origin is compared with the raster every cycle; once open the area
+   --  runs until its row counter reaches the number of rows, using an
+   --  internal character-line counter and matrix pointer, so programs can
+   --  change height, rows or addresses in the middle of the frame.
+   type Area_State is (Idle, Pending, Display, Done);
+   Area : Area_State := Idle;
+   Y_Counter   : Natural := 0;   --  pixel line within the character row
+   Row_Counter : Natural := 0;
+   Memptr      : Natural := 0;   --  matrix index of the current row
+   H_Open      : Boolean := False;
+   H_Start     : Natural := 0;   --  first pixel of the text in this line
+   Line_Cols   : Natural := 0;   --  columns latched when the line opened
+   Line_Blank  : Boolean := True;
+   Was_Blank   : Boolean := True;
+   Cell : Natural := Natural'Last;
+   Bits, Col_Nib : Byte := 0;
+
+   procedure Reset_Video is
+   begin
+      Area := Idle;
+      Row_Counter := 0;
+      Y_Counter := 0;
+      Memptr := 0;
+   end Reset_Video;
+
+   function Char_Height return Natural is
+     (if (Regs (3) and 1) /= 0 then 16 else 8);
+   function Rows_Reg return Natural is
+     (Natural (Shift_Right (Regs (3), 1) and 16#3F#));
+
+   procedure Draw_Cycle (L, C : Natural) is
       Y : constant Integer := L - Win_Y;
    begin
-      if Y not in 0 .. Video.VIC_Visible_Lines - 1 then
+      --  vertical flip-flop
+      if Area = Idle and then Natural (Regs (1)) = L / 2 then
+         Area := (if Rows_Reg = 0 then Done else Pending);
+      end if;
+      --  horizontal flip-flop
+      if Area in Pending | Display and then not H_Open
+        and then Natural (Regs (0) and 16#7F#) = C
+      then
+         H_Open := True;
+         H_Start := C * 4;
+         Line_Cols := Natural (Regs (2) and 16#7F#);
+         Cell := Natural'Last;
+         if Area = Pending then
+            Area := Display;
+         end if;
+         if Line_Cols > 0 then
+            Line_Blank := False;
+         end if;
+      end if;
+      --  next character row
+      if Area = Display and then C = 0
+        and then (Y_Counter = Char_Height or else Y_Counter = 2 * Char_Height)
+      then
+         Y_Counter := 0;
+         Memptr := Memptr + (if Was_Blank then 0 else Line_Cols);
+         Row_Counter := Row_Counter + 1;
+         if Row_Counter >= Rows_Reg then
+            Area := Done;
+         end if;
+      end if;
+
+      if Y not in 0 .. Video.VIC_Visible_Lines - 1
+        or else C * 4 >= Video.VIC_Visible_Width
+      then
          return;
       end if;
       declare
-         H_Org  : constant Natural := Natural (Regs (0) and 16#7F#) * 4;
-         V_Org  : constant Natural := Natural (Regs (1)) * 2;
-         Cols   : constant Natural := Natural (Regs (2) and 16#7F#);
-         Rows   : constant Natural := Natural (Shift_Right (Regs (3), 1) and 16#3F#);
-         Tall   : constant Boolean := (Regs (3) and 1) /= 0;
-         Char_H : constant Natural := (if Tall then 16 else 8);
-         Screen : constant Word := Screen_Address;
-         Chars  : constant Word := Word (Regs (5) and 15) * 16#400#;
          Back   : constant Byte := Shift_Right (Regs (15), 4);
          Border : constant Byte := Regs (15) and 7;
          Aux    : constant Byte := Shift_Right (Regs (14), 4);
          Normal : constant Boolean := (Regs (15) and 8) /= 0;
-         In_Rows : constant Boolean :=
-           L >= V_Org and then L < V_Org + Rows * Char_H;
-         Row    : constant Natural := (if In_Rows then (L - V_Org) / Char_H
-                                       else 0);
-         Y_In   : constant Natural := (if In_Rows then (L - V_Org) mod Char_H
-                                       else 0);
-         Cell   : Natural := Natural'Last;
-         Bits   : Byte := 0;
-         Col_Nib : Byte := 0;
-         C      : Byte;
+         Char_H : constant Natural := Char_Height;
+         P      : Byte;
       begin
-         for X in Win_X .. Win_X + Win_Width - 1 loop
-            if In_Rows and then X >= H_Org and then X < H_Org + Cols * 8 then
+         for X in C * 4 .. C * 4 + 3 loop
+            if Area = Display and then H_Open and then X >= H_Start
+              and then X < H_Start + Line_Cols * 8
+            then
                declare
-                  Col : constant Natural := (X - H_Org) / 8;
-                  Bit : constant Natural := (X - H_Org) mod 8;
+                  Col : constant Natural := (X - H_Start) / 8;
+                  Bit : constant Natural := (X - H_Start) mod 8;
                begin
-                  if Row * Cols + Col /= Cell then
-                     Cell := Row * Cols + Col;
+                  if Col /= Cell then
+                     Cell := Col;
                      declare
                         Addr : constant Word :=
-                          (Screen + Word (Cell)) and 16#3FFF#;
+                          (Screen_Address + Word ((Memptr + Col) mod 16#4000#))
+                          and 16#3FFF#;
                         Code : constant Byte := Fetch (Addr);
                      begin
-                        Bits := Fetch ((Chars + Word (Code) * Word (Char_H) +
-                                        Word (Y_In)) and 16#3FFF#);
+                        Bits := Fetch
+                          ((Word (Regs (5) and 15) * 16#400# +
+                            Word (Code) * Word (Char_H) +
+                            Word (Y_Counter mod Char_H))
+                           and 16#3FFF#);
                         Col_Nib := Color (Natural (Addr and 16#3FF#)) and 15;
                      end;
                   end if;
                   if (Col_Nib and 8) /= 0 then
                      --  multicolour: two-pixel-wide bit pairs
                      case Shift_Right (Bits, 6 - 2 * (Bit / 2)) and 3 is
-                        when 0 => C := Back;
-                        when 1 => C := Border;
-                        when 2 => C := Col_Nib and 7;
-                        when others => C := Aux;
+                        when 0 => P := Back;
+                        when 1 => P := Border;
+                        when 2 => P := Col_Nib and 7;
+                        when others => P := Aux;
                      end case;
                   else
-                     declare
-                        On : constant Boolean :=
-                          (Shift_Right (Bits, 7 - Bit) and 1) /= 0;
-                     begin
-                        C := (if On = Normal then Col_Nib and 7 else Back);
-                     end;
+                     P := (if ((Shift_Right (Bits, 7 - Bit) and 1) /= 0)
+                             = Normal then Col_Nib and 7 else Back);
                   end if;
                end;
             else
-               C := Border;
+               P := Border;
             end if;
-            declare
-               P : constant Types.Pixel := Palette (C);
-               FX : constant Natural := (X - Win_X) * 2;
-            begin
-               Video.VIC_FB (Y, FX) := P;
-               Video.VIC_FB (Y, FX + 1) := P;
-            end;
+            if X < Video.VIC_Visible_Width then
+               Video.VIC_FB (Y, X) := Palette (P);
+            end if;
          end loop;
       end;
-   end Draw_Line;
+   end Draw_Cycle;
 
    procedure Tick (Cycles : Natural) is
-      Left : Natural := Cycles;
-      Step : Natural;
    begin
       Sound_Tick (Cycles);
-      while Left > 0 loop
-         Step := Natural'Min (Left, Cycles_Per_Line - Cycle);
-         Cycle := Cycle + Step;
-         Left := Left - Step;
+      for N in 1 .. Cycles loop
+         Draw_Cycle (Line, Cycle);
+         Cycle := Cycle + 1;
          if Cycle >= Cycles_Per_Line then
+            --  end of line
             Cycle := 0;
-            Draw_Line (Line);
+            if Area = Display then
+               Y_Counter := Y_Counter + 1;
+            end if;
+            Was_Blank := Line_Blank;
+            Line_Blank := True;
+            H_Open := False;
             Line := Line + 1;
             if Line >= Lines_Per_Frame then
+               --  end of frame
                Line := 0;
+               Area := Idle;
+               Row_Counter := 0;
+               Y_Counter := 0;
+               Memptr := 0;
                Frame_Done := True;
             end if;
          end if;

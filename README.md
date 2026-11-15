@@ -87,9 +87,13 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 ### VIC-20
 
 Machine → Commodore VIC-20 (or `--vic20`, with `3k`, `8k`, `16k`, `24k` or
-`35k` for a RAM expansion): the 6561 (PAL) / 6560 (NTSC) VIC with its
-22 x 23 text screen, multicolour characters, double-height characters,
-reverse mode and its sound (three square-wave voices and noise, pitch
+`35k` for a RAM expansion): the 6561 (PAL) / 6560 (NTSC) VIC, drawn cycle
+by cycle (4 pixels per cycle with the registers of that moment, the text
+area opened and counted like the chip does it, so raster splits, colour
+changes in the middle of a line and second text areas lower on the screen
+work; the whole 284 x 284 / 260 x 233 picture is shown, with the VIC-20's
+wide pixels), multicolour and double-height characters, reverse mode and
+its sound (three square-wave voices and noise, pitch
 checked against VICE), the two 6522 VIAs (keyboard, joystick, serial bus,
 Datasette, RESTORE as NMI) and the memory map with the expansion blocks.
 The KERNAL sizes RAM itself, so the start-up screen shows 3583, 6655, 11775,
@@ -98,7 +102,11 @@ C64 (fast load or the emulated drive), and autostart picks the expansion a
 program was made for from its load address ($1001 unexpanded, $0401 +3K,
 $1201 +8K or more, $A000 cartridge images run from RAM). Forge builds BASIC
 and assembly programs for wherever BASIC starts on the configured VIC-20;
-the graphics editors work with the C64 and C128 only.
+the graphics editors work with the C64 and C128 only. Checked against VICE
+with the CNCD demo collection, Bouncing Ball II and Veni Vidi Vic (which
+insists on exact 6561 timing), the cc65 sample programs and the
+`tests/vic20_test.sh` programs (frame timing, keyboard, memory sizes,
+cartridges, disk, tape).
 
 Cartridges (File → Insert cartridge, or autostart the file): VICE `.crt`
 images of the generic type, `.prg` files loading at `$A000`/`$B000` (or 16K /
