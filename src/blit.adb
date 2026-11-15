@@ -30,6 +30,7 @@ with Cairo.Surface;
 with Cairo.Png;
 with Types; use Types;
 with Video; use Video;
+with Interfaces; use Interfaces;
 
 package body Blit is
 
@@ -51,13 +52,33 @@ package body Blit is
       pragma Import (Ada, Dst);
    begin
       Cairo.Surface.Flush (Surface);
-      for Y in 0 .. H - 1 loop
-         for X in 0 .. W - 1 loop
-            Dst (Y, X) := (case S is
-                              when VIC_Screen => VIC_FB (Y, X),
-                              when VDC_Screen => VDC_FB (Y, X));
+      if PAL_Blur and then S = VIC_Screen then
+         for Y in 0 .. H - 1 loop
+            for X in 0 .. W - 1 loop
+               declare
+                  L : constant Pixel := VIC_FB (Y, Natural'Max (X - 1, 0));
+                  C : constant Pixel := VIC_FB (Y, X);
+                  R : constant Pixel := VIC_FB (Y, Natural'Min (X + 1, W - 1));
+                  --  per channel: (L + 2 C + R) / 4, the channels kept apart
+                  --  by masking (each fits in 10 bits during the sum)
+                  function Mix (Mask : Pixel) return Pixel is
+                    (((L and Mask) + 2 * (C and Mask) + (R and Mask)) / 4
+                     and Mask);
+               begin
+                  Dst (Y, X) := Mix (16#FF0000#) or Mix (16#00FF00#)
+                    or Mix (16#0000FF#);
+               end;
+            end loop;
          end loop;
-      end loop;
+      else
+         for Y in 0 .. H - 1 loop
+            for X in 0 .. W - 1 loop
+               Dst (Y, X) := (case S is
+                                 when VIC_Screen => VIC_FB (Y, X),
+                                 when VDC_Screen => VDC_FB (Y, X));
+            end loop;
+         end loop;
+      end if;
       Cairo.Surface.Mark_Dirty (Surface);
    end Copy;
 

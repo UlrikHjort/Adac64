@@ -245,9 +245,10 @@ package body GUI is
       Keyboard.Release_All;
    end Start_Machine;
 
-   type Ext_List is array (1 .. 10) of String (1 .. 3);
+   type Ext_List is array (1 .. 11) of String (1 .. 3);
    Extensions : constant Ext_List :=
-     ("d64", "d71", "g64", "t64", "tap", "prg", "crt", "bin", "rom", "a0 ");
+     ("d64", "d71", "d81", "g64", "t64", "tap", "prg", "crt", "bin", "rom",
+      "a0 ");
 
    function Choose_Save_File (Title : String) return String is
       Dlg : Gtk_File_Chooser_Dialog;
@@ -553,6 +554,12 @@ package body GUI is
       Area.Queue_Draw;
    end On_CRT;
 
+   procedure On_PAL_Blur (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      Blit.PAL_Blur := Item.Get_Active;
+      Area.Queue_Draw;
+   end On_PAL_Blur;
+
    procedure On_Positional
      (Item : access Gtk_Check_Menu_Item_Record'Class) is
    begin
@@ -678,6 +685,7 @@ package body GUI is
       Settings.Set ("paddles", Paddles.Mode_Kind'Image (Paddles.Mode));
       Settings.Set ("integerscale", Integer_Scale);
       Settings.Set ("crt", CRT_Filter);
+      Settings.Set ("palblur", Blit.PAL_Blur);
       Settings.Set ("lastdir", To_String (Last_Dir));
       declare
          W, H : Gint;
@@ -1329,7 +1337,7 @@ package body GUI is
                   REU_Given : Boolean := False) is
       VBox : Gtk_Box;
       M_File, M_Machine, M_Input, M_View, M_Help : Gtk_Menu;
-      Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
+      Mute, Item_Pos, Item_Int, Item_CRT, Item_Blur : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
       Drive_Group, Std_Group, SID_Group, V20_Group, Paddle_Group :
@@ -1375,6 +1383,7 @@ package body GUI is
       end if;
       Integer_Scale := Settings.Get ("integerscale", False);
       CRT_Filter := Settings.Get ("crt", False);
+      Blit.PAL_Blur := Settings.Get ("palblur", False);
       Last_Dir := To_Unbounded_String (Settings.Get ("lastdir", ""));
 
       Gtk_New (Win);
@@ -1529,6 +1538,8 @@ package body GUI is
       Add_Item (M_View, "_Fullscreen (Alt+Enter)", On_Fullscreen'Access);
       Add_Check (M_View, "_Integer scaling", Item_Int, On_Integer_Scale'Access);
       Add_Check (M_View, "_CRT scanlines", Item_CRT, On_CRT'Access);
+      Add_Check (M_View, "_PAL blur (colours bleed sideways)", Item_Blur,
+                 On_PAL_Blur'Access);
 
       M_Help := Add_Menu (Bar, "_Help");
       Add_Item (M_Help, "_Keyboard", On_Keys_Help'Access);
@@ -1610,6 +1621,7 @@ package body GUI is
       Item_Pos.Set_Active (Keyboard.Positional);
       Item_Int.Set_Active (Integer_Scale);
       Item_CRT.Set_Active (CRT_Filter);
+      Item_Blur.Set_Active (Blit.PAL_Blur);
       Updating_Menu := False;
 
       if not SID_Given and then Settings.Get ("sid", "6581") = "8580" then

@@ -536,7 +536,9 @@ F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 soft reset (the
 reset button: RAM is kept), Ctrl+F12 hard reset (power off and on),
 Shift+F9 quick save, Shift+F10 quick load, Shift+F12 monitor,
 Alt+Enter fullscreen, Ctrl+Shift+V paste text (typed into the machine).
-View menu: fullscreen, integer scaling, CRT scanlines.
+View menu: fullscreen, integer scaling, CRT scanlines and PAL blur (each
+pixel mixed with its neighbours, as a PAL TV softens the picture; also
+`--pal-blur` for headless screenshots).
 
 Settings (machine, 40/80 key, joystick, controller, drive options, display,
 keyboard mode, last directory, window size) are saved in

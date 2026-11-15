@@ -30,6 +30,7 @@
 --    --vic20 [3k|8k|16k|24k|35k]  start as a VIC-20 (with RAM expansion)
 --    --80 / --40        C128: 40/80 key down (80 columns) / up
 --    --plus4, --c16     start a Commodore Plus/4 or C16
+--    --pal-blur         blur the picture sideways like a PAL TV
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
@@ -320,6 +321,8 @@ begin
          elsif A = "--headless" and then I < Argument_Count then
             I := I + 1;
             Headless := Natural'Value (Argument (I));
+         elsif A = "--pal-blur" then
+            Blit.PAL_Blur := True;
          elsif A = "--png" and then I < Argument_Count then
             I := I + 1;
             PNG := To_Unbounded_String (Argument (I));

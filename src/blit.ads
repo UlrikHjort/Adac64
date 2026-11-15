@@ -34,6 +34,10 @@ package Blit is
    function Width (S : Source) return Natural;
    function Height (S : Source) return Natural;
 
+   PAL_Blur : Boolean := False;
+   --  Mix each pixel with its left and right neighbours (1/4, 1/2, 1/4),
+   --  as a PAL TV's limited bandwidth does (not for the 80-column VDC)
+
    procedure Copy (S : Source; Surface : Cairo.Cairo_Surface);
    --  Surface must be an RGB24 image surface of the source's size.
 
