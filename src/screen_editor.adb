@@ -201,9 +201,11 @@ package body Screen_Editor is
       Screen_At : constant Word :=
         Word (Shift_Right (Machine.IO_Peek (16#D018#), 4)) * 16#400#;
    begin
-      if Machine.Model = Machine.VIC20 then
+      if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works with "
+            Status.Set_Text ("the " & (if Machine.Model = Machine.VIC20
+                                       then "VIC-20" else "C16 / Plus/4")
+                             & " has no VIC-II: this editor works with "
                              & "the C64 and C128");
          end if;
          return;

@@ -49,6 +49,11 @@ package Keyboard is
 
    Restore_Down : Boolean := False;
 
+   type Layout_Kind is (C64, Plus4);
+   Layout : Layout_Kind := C64;
+   --  Plus4: the C16 / Plus/4 matrix (the keys outside the letters and
+   --  digits sit elsewhere; F1-F3, HELP, ESC and four cursor keys)
+
    Positional : Boolean := False;
    --  False: symbolic mapping (type the character you mean).
    --  True:  positional mapping (PC key positions = C64 key positions,

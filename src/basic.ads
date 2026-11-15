@@ -42,7 +42,8 @@ with Ada.Strings.Unbounded;
 
 package Basic is
 
-   type Dialect is (V2, V7);   --  C64 BASIC 2.0, C128 BASIC 7.0
+   type Dialect is (V2, V7, V35);
+   --  C64 BASIC 2.0, C128 BASIC 7.0, C16 / Plus/4 BASIC 3.5
 
    function Is_Source (Path : String) return Boolean;   --  .bas
    Load_Override : Word := 0;
@@ -50,7 +51,7 @@ package Basic is
    --  (the VIC-20 keeps BASIC at $1001, $0401 or $1201); 0 = default.
    function Load_Address (D : Dialect) return Word is
      (if Load_Override /= 0 then Load_Override
-      elsif D = V2 then 16#0801# else 16#1C01#);
+      elsif D = V2 then 16#0801# elsif D = V35 then 16#1001# else 16#1C01#);
 
    procedure Tokenize_File (Path : String; D : Dialect);
    procedure Tokenize_Text (Text : String; D : Dialect);

@@ -29,6 +29,7 @@
 --    --c64 / --c128     start as a Commodore 64 / 128 (default: last used)
 --    --vic20 [3k|8k|16k|24k|35k]  start as a VIC-20 (with RAM expansion)
 --    --80 / --40        C128: 40/80 key down (80 columns) / up
+--    --plus4, --c16     start a Commodore Plus/4 or C16
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
 --    --fast-drive       use KERNAL traps instead of the emulated 1541
@@ -190,17 +191,20 @@ begin
          elsif A = "--basic" and then I < Argument_Count then
             declare
                PRG : Unbounded_String;
-               C128_Wanted : Boolean := False;
+               C128_Wanted, TED_Wanted : Boolean := False;
             begin
                for K in 1 .. Argument_Count loop
                   C128_Wanted := C128_Wanted or else Argument (K) = "--c128";
+                  TED_Wanted := TED_Wanted or else Argument (K) = "--plus4"
+                    or else Argument (K) = "--c16";
                end loop;
                Basic.Report := Print_Line'Unrestricted_Access;
                if Machine."=" (Model, Machine.VIC20) then
                   Basic.Load_Override := VIC20_Basic_Start;
                end if;
                Basic.Build (Argument (I + 1),
-                            (if C128_Wanted then Basic.V7 else Basic.V2),
+                            (if C128_Wanted then Basic.V7
+                             elsif TED_Wanted then Basic.V35 else Basic.V2),
                             PRG, Ok);
                if not Ok then
                   Set_Exit_Status (Failure);
@@ -260,6 +264,12 @@ begin
             end if;
          elsif A = "--c128" then
             Model := Machine.C128;
+            Model_Given := True;
+         elsif A = "--plus4" then
+            Model := Machine.Plus4;
+            Model_Given := True;
+         elsif A = "--c16" then
+            Model := Machine.C16;
             Model_Given := True;
          elsif A = "--vic20" then
             Model := Machine.VIC20;
@@ -416,6 +426,9 @@ begin
          end if;
          Basic.Build (To_String (File),
                       (if Machine."=" (Model, Machine.C128) then Basic.V7
+                       elsif Machine."=" (Model, Machine.Plus4)
+                         or else Machine."=" (Model, Machine.C16)
+                       then Basic.V35
                        else Basic.V2),
                       PRG, Ok);
          if not Ok then
@@ -497,9 +510,12 @@ begin
                end;
             end if;
          end loop;
-         --  (a VIC-20 is at READY before the 1541 has started up)
+         --  (a VIC-20, C16 or Plus/4 is at READY before the 1541 has
+         --  started up)
          if not Typed and then Machine.Screen_Contains ("READY.")
-           and then (Machine."/=" (Model, Machine.VIC20) or else F > 100)
+           and then (Machine."=" (Model, Machine.C64)
+                     or else Machine."=" (Model, Machine.C128)
+                     or else F > 100)
          then
             Machine.Type_Text (To_String (Text));
             Typed := True;

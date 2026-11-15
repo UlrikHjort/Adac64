@@ -215,11 +215,80 @@ package body Keyboard is
       end case;
    end Joystick_Mapping;
 
+   --  C16 / Plus/4: the keys that are not where the C64 has them
+   function Map_Key_Plus4 (KV : Unsigned_32) return Mapping is
+      function K (C : Column; R : Row; S : Shift_Mode := Force_No_Shift)
+        return Mapping is (Key ((C, R), S));
+   begin
+      if KV in 16#20# .. 16#7E# then
+         case Character'Val (KV) is
+            when '+' => return K (6, 6);
+            when '-' => return K (5, 6);
+            when '*' => return K (6, 1);
+            when '/' => return K (6, 7);
+            when '=' => return K (6, 5);
+            when ':' => return K (5, 5);
+            when ';' => return K (6, 2);
+            when ',' => return K (5, 7);
+            when '.' => return K (5, 4);
+            when '@' => return K (0, 7);
+            when '<' => return K (5, 7, Force_Shift);
+            when '>' => return K (5, 4, Force_Shift);
+            when '?' => return K (6, 7, Force_Shift);
+            when '[' => return K (5, 5, Force_Shift);
+            when ']' => return K (6, 2, Force_Shift);
+            when '\' => return K (0, 2);
+            when others => return No_Map;
+         end case;
+      end if;
+      case KV is
+         when GDK_Return => return K (0, 1, Natural_Shift);
+         when GDK_BackSpace | GDK_Delete => return K (0, 0, Natural_Shift);
+         when GDK_Insert => return K (0, 0, Force_Shift);
+         when GDK_Home => return K (7, 1, Natural_Shift);
+         when GDK_End => return K (7, 1, Force_Shift);
+         when GDK_Right => return K (6, 3);
+         when GDK_Left => return K (6, 0);
+         when GDK_Down => return K (5, 0);
+         when GDK_Up => return K (5, 3);
+         when GDK_F1 => return K (0, 4);
+         when GDK_F1 + 1 => return K (0, 5);
+         when GDK_F1 + 2 => return K (0, 6);
+         when GDK_F1 + 3 => return K (0, 4, Force_Shift);
+         when GDK_F1 + 4 => return K (0, 5, Force_Shift);
+         when GDK_F1 + 5 => return K (0, 6, Force_Shift);
+         when GDK_F1 + 6 => return K (0, 3);              --  HELP
+         when GDK_F8 => return K (0, 3, Force_Shift);
+         when GDK_Shift_L | GDK_Shift_R => return K (1, 7, Natural_Shift);
+         when GDK_Control_L | GDK_Control_R => return K (7, 2, Natural_Shift);
+         when GDK_Alt_L | GDK_Super_L => return K (7, 5, Natural_Shift);
+         when GDK_Escape => return K (7, 7, Natural_Shift);   --  RUN/STOP
+         when GDK_Tab => return K (6, 4, Natural_Shift);      --  ESC
+         when GDK_Sterling => return K (0, 2);
+         when others => return No_Map;
+      end case;
+   end Map_Key_Plus4;
+
    function Map_Key (KV : Unsigned_32) return Mapping is
       J : constant Mapping := Joystick_Mapping (KV);
    begin
       if J.Valid then
          return J;
+      end if;
+      if Layout = Plus4 then
+         declare
+            P : constant Mapping := Map_Key_Plus4 (KV);
+         begin
+            if P.Valid then
+               return P;
+            elsif KV not in Character'Pos ('a') .. Character'Pos ('z')
+                          | Character'Pos ('A') .. Character'Pos ('Z')
+                          | Character'Pos ('0') .. Character'Pos ('9')
+                          | Character'Pos (' ') .. Character'Pos (')')
+            then
+               return No_Map;        --  no such key on the Plus/4
+            end if;
+         end;
       end if;
 
       if KV in 16#20# .. 16#7E# then
@@ -424,8 +493,10 @@ package body Keyboard is
       elsif Force_NS then
          Matrix (K_LSHIFT.Col) := Matrix (K_LSHIFT.Col) and
            not Shift_Left (1, K_LSHIFT.R);
-         Matrix (K_RSHIFT.Col) := Matrix (K_RSHIFT.Col) and
-           not Shift_Left (1, K_RSHIFT.R);
+         if Layout = C64 then         --  (the Plus/4 has ESC there)
+            Matrix (K_RSHIFT.Col) := Matrix (K_RSHIFT.Col) and
+              not Shift_Left (1, K_RSHIFT.R);
+         end if;
       end if;
       Joy1 := 0;
       Joy2 := 0;
@@ -457,7 +528,7 @@ package body Keyboard is
          declare
             J : constant Mapping := Joystick_Mapping (Keyval);
             PM : constant Mapping :=
-              (if Positional and then not J.Valid
+              (if Positional and then not J.Valid and then Layout = C64
                then Positional_Map (Keycode) else No_Map);
             M : constant Mapping := (if PM.Valid then PM else Map_Key (Keyval));
          begin

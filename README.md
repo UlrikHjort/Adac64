@@ -1,7 +1,7 @@
 # AdaC64
 
-A Commodore 64, Commodore 128 and VIC-20 emulator written in Ada 2012 with
-GtkAda, with Forge, an assembler IDE, debugger and graphics editors.
+A Commodore 64, Commodore 128, VIC-20, C16 and Plus/4 emulator written in
+Ada 2012 with GtkAda, with Forge, an assembler IDE, debugger and graphics editors.
 The Commodore ROMs are not included; see [ROMs](#roms) for which files are
 needed and where they go.
 
@@ -19,6 +19,7 @@ leave some out). The files are found by these names:
 | C64 | `<roms>/C64/` | `basic-901226-01.bin`, `kernal-901227-03.bin`, `chargen-901225-01.bin` |
 | C128 | `<roms>/C128/` | `kernal-318020-05.bin`, `basiclo-318018-04.bin`, `basichi-318019-04.bin`, `chargen-390059-01.bin`, `basic64-901226-01.bin`, `kernal64-901227-03.bin` |
 | VIC-20 | `roms/vic20/` (or `<roms>/VIC20/` with VICE names) | `basic.901486-01.bin`, `characters.901460-03.bin`, `kernal.901486-07.bin` (PAL), `kernal.901486-06.bin` (NTSC) |
+| C16 / Plus/4 | `roms/plus4/` (or `<roms>/PLUS4/`) | `basic-318006-01.bin`, `kernal-318004-05.bin` (PAL), `kernal-318005-05.bin` (NTSC); the Plus/4's 3-plus-1 programs: `3plus1-317053-01.bin`, `3plus1-317054-01.bin` (optional). The zimmers.net names (`basic.318006-01.bin`, `3plus1low.317053-01.bin`, ...) work too |
 | 1541 | `roms/drives/` or `<roms>/DRIVES/` | `1541-II.251968-03.bin`, or `dos1541.bin` = `1541-c000.325302-01.bin` + `1541-e000.901229-05.bin` |
 | 1571 | `roms/drives/` | `1571-rom.310654-05.bin` |
 
@@ -37,6 +38,11 @@ check that you have the expected versions (`sha1sum FILE`):
     4fd85ab6647ee2ac7ba40f729323f2472d35b9b4  characters.901460-03.bin
     ce0137ed69f003a299f43538fa9eee27898e621e  kernal.901486-07.bin
     06de7ec017a5e78bd6746d89c2ecebb646efeb19  kernal.901486-06.bin
+    161c96b4ad20f3a4f2321808e37a5ded26a135dd  basic-318006-01.bin
+    7c7e07f016391174a557e790c4ef1cbe33512cdb  kernal-318004-05.bin
+    a3d9e5be091b98de39a046ab167fb7632d053682  kernal-318005-05.bin
+    3b69f6e7cb4c18bb08e203fb18b7dabfa853390f  3plus1-317053-01.bin
+    0ad7ac2db7da692d972e586ca0dfd747d82c7693  3plus1-317054-01.bin
     d3b78c3dbac55f5199f33f3fe0036439811f7fb3  1541-II.251968-03.bin
     8e0547430135ba462525c224e76356bd3d430f11  1541-c000.325302-01.bin
     f5d60777440829e46dc91285e662ba072acd2d8b  1541-e000.901229-05.bin
@@ -151,6 +157,29 @@ coordinates) and `$D014` (raster line) once per frame and sets IRQ bit 3
 in `$D019`. Pulling the LP input low (CIA1 port B bit 4: joystick 1 fire,
 or a program driving the port) latches the beam position too, as on the
 real machine; `tests/c64_pen.asm` checks both.
+
+### C16 and Plus/4
+
+Machine → Commodore Plus/4 or Commodore 16 (or `--plus4` / `--c16`): the
+TED (7360 / 8360) with all its text and bitmap modes (hires, multicolour,
+extended colour, 121 colours, hardware cursor and flashing, 38 columns /
+24 rows, smooth scroll), its three timers, raster interrupt and two sound
+voices (square waves and noise); the 7501 CPU clocked as the TED clocks
+it (1.77 MHz in the borders, 0.89 MHz while it fetches the screen, and
+the bad-line DMA); the ROM banking (`$FDD0`, `$FF3E` / `$FF3F`), the
+keyboard latch at `$FF08` and the serial bus on the CPU port, so a 1541
+loads through the KERNAL as on the real machine (or by fast load, as on
+the C64). The Plus/4 has 64K and the 3-plus-1 programs (F1), the C16 16K.
+BASIC 3.5 programs can be written in Forge or tokenized with
+`--plus4 --basic file.bas`; the keys sit where a Plus/4 has them (cursor
+keys, F1-F3, F7 = HELP, Tab = ESC, Esc = RUN/STOP).
+
+The boot screens, the 121 colours, the graphics and text modes, the CPU
+speed in each part of the screen and the sound pitch were compared with
+VICE's xplus4 and are identical; `tests/plus4_test.sh` checks boot,
+keyboard, timing, both kinds of loading and snapshots. Not there yet:
+tape, cartridges, the 1551 drive and the ACIA (RS-232), and Forge's
+graphics editors (they are made for the VIC-II).
 
 ### Drive 8
 
@@ -488,6 +517,8 @@ Disk images can also be dropped onto the window.
     src/machine-core.*         memory, page maps, 6502 bus, timing
     src/machine-c64_system.*   C64 / C128: maps, I/O, MMU, Z80, REU, .crt
     src/machine-vic20_system.* VIC-20: map, VIAs, RAM expansion, cartridges
+    src/machine-plus4_system.* C16 / Plus/4: banking, I/O, CPU port, keyboard
+    src/ted.*        TED: video, timers, interrupts, sound
     src/crt.*        CRT cartridge files
     src/reu.*        RAM Expansion Unit
     src/tape.*       Datasette / TAP images

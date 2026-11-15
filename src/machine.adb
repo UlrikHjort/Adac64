@@ -41,11 +41,27 @@ with IEC;
 with Machine.Core; use Machine.Core;
 with Machine.C64_System;
 with Machine.VIC20_System;
+with Machine.Plus4_System;
 
 package body Machine is
 
    package C64S renames Machine.C64_System;
    package V20S renames Machine.VIC20_System;
+   package P4S renames Machine.Plus4_System;
+
+   function Is_TED return Boolean is (Current_Model in Plus4 | C16);
+
+   --  KERNAL zero page and keyboard buffer: the C64's (also the VIC-20's
+   --  and the C128's in C64 mode), the C128's, or the Plus/4's
+   function ZP_FNLEN return Word is (if Is_TED then 16#AB# else 16#B7#);
+   function ZP_SA return Word is (if Is_TED then 16#AD# else 16#B9#);
+   function ZP_FA return Word is (if Is_TED then 16#AE# else 16#BA#);
+   function ZP_FNADR return Word is (if Is_TED then 16#AF# else 16#BB#);
+   function ZP_EAL return Word is (if Is_TED then 16#9D# else 16#AE#);
+   function Key_Count_Addr return Word is
+     (if Is_TED then 16#EF# elsif C64_Mode then 16#C6# else 16#D0#);
+   function Key_Buffer_Addr return Word is
+     (if Is_TED then 16#0527# elsif C64_Mode then 16#0277# else 16#034A#);
 
    --  Typing / autostart
    Type_Queue : Unbounded_String;
@@ -118,6 +134,10 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.Attach_Cartridge (Path, Ok);
          when C64 | C128 => C64S.Attach_Cartridge (Path, Ok);
+         when Plus4 | C16 =>
+            Ok := False;
+            Err := To_Unbounded_String
+              ("cartridges are not supported on the Plus/4 and C16 yet");
       end case;
    end Attach_Cartridge;
 
@@ -131,7 +151,8 @@ package body Machine is
    function Cartridge_Name return String is
      (case Current_Model is
          when VIC20 => V20S.Cartridge_Name,
-         when C64 | C128 => C64S.Cartridge_Name);
+         when C64 | C128 => C64S.Cartridge_Name,
+         when Plus4 | C16 => "");
 
    procedure Detach is
    begin
@@ -173,7 +194,7 @@ package body Machine is
      ("nmi=" & NMI_Count'Image & " (last from" & Last_NMI_PC'Image & ")" &
       " irq=" & IRQ_Count'Image & " jam=" & CPU.Jammed'Image &
       " drivePC=" & Drive1541.Get_PC'Image &
-      (if Current_Model = VIC20 then "" else C64S.Debug_Text) &
+      (if Current_Model in C64 | C128 then C64S.Debug_Text else "") &
       (if Tape.Present then " tape" & Tape.Counter'Image & "% motor=" &
          Tape.Motor'Image & " play=" & Tape.Playing'Image else ""));
 
@@ -207,6 +228,7 @@ package body Machine is
       case M is
          when VIC20 => V20S.Load_ROMs (ROM_Dir, Ok);
          when C64 | C128 => C64S.Load_ROMs (ROM_Dir, Ok);
+         when Plus4 | C16 => P4S.Load_ROMs (ROM_Dir, Ok);
       end case;
       Mem (ROM_Empty .. ROM_Empty + 255) := (others => 16#FF#);
       Set_Video_Standard (Standard);   --  timing of the model's video chip
@@ -215,11 +237,11 @@ package body Machine is
 
    function Model return Model_Type is (Current_Model);
    function In_C64_Mode return Boolean is
-     (C64_Mode and then Current_Model /= VIC20);
+     (C64_Mode and then Current_Model in C64 | C128);
 
    function Basic_Start return Word is
      (case Current_Model is
-        when VIC20 => Make_Word (Peek (16#2B#), Peek (16#2C#)),
+        when VIC20 | Plus4 | C16 => Make_Word (Peek (16#2B#), Peek (16#2C#)),
         when others =>
           (if C64_Mode then 16#0801# else 16#1C01#));
    function Error_Message return String is (To_String (Err));
@@ -232,12 +254,14 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.Set_Standard (V);
          when C64 | C128 => C64S.Set_Standard (V);
+         when Plus4 | C16 => P4S.Set_Standard (V);
       end case;
    end Set_Video_Standard;
 
    function Standard return Video_Standard is (Current_Standard);
    function Frame_Rate return Float is
      (if Current_Model = VIC20 then V20S.Frame_Rate
+      elsif Is_TED then P4S.Frame_Rate
       elsif Current_Standard = PAL then 985_248.0 / 19_656.0
       else 1_022_727.0 / 17_095.0);
    function Get_PC return Word is (CPU.PC);
@@ -252,10 +276,12 @@ package body Machine is
          Color_RAM := (others => 0);
       end if;
       C64_Mode := Current_Model /= C128;
-      Has_CPU_Port := Current_Model in C64 | C128;
+      Has_CPU_Port := Current_Model /= VIC20;
+      Keyboard.Layout := (if Is_TED then Keyboard.Plus4 else Keyboard.C64);
       case Current_Model is
          when VIC20 => V20S.Reset (Hard);
          when C64 | C128 => C64S.Reset (Hard);
+         when Plus4 | C16 => P4S.Reset (Hard);
       end case;
       Keyboard.Release_All;
       Rebuild_Map;
@@ -277,12 +303,15 @@ package body Machine is
       Off : constant Integer := Read_Map (Hi (Addr));
    begin
       if Addr < 2 and then Has_CPU_Port then
-         return C64S.Port_Read (Addr);
+         return (if Is_TED then P4S.Port_Read (Addr)
+                 else C64S.Port_Read (Addr));
       elsif Off >= 0 then
          return Mem (Off + Natural (Addr and 16#FF#));
       elsif Current_Model = VIC20 and then Addr not in 16#9000# .. 16#9BFF#
       then
          return V20S.IO_Peek (Addr);   --  cartridge areas (Final Expansion)
+      elsif Is_TED then
+         return P4S.IO_Peek (Addr);
       else
          return 16#FF#;
       end if;
@@ -292,6 +321,8 @@ package body Machine is
    begin
       if Current_Model = VIC20 then
          V20S.Poke (Addr, Value);
+      elsif Is_TED then
+         P4S.Poke (Addr, Value);
       else
          Mem (Natural (Addr)) := Value;
       end if;
@@ -315,15 +346,18 @@ package body Machine is
       else 0);
 
    function Read_Name return Byte_Array is
-      Len  : constant Natural := Natural (Bus_Read (16#B7#));
-      Ptr  : constant Natural := Natural (Bus_Read (16#BB#)) +
-        256 * Natural (Bus_Read (16#BC#));
+      Len  : constant Natural := Natural (Bus_Read (ZP_FNLEN));
+      Ptr  : constant Natural := Natural (Bus_Read (ZP_FNADR)) +
+        256 * Natural (Bus_Read (ZP_FNADR + 1));
       Bank : constant Natural :=
         (if C64_Mode then 0 else RAM_Bank_Of (Bus_Read (16#C7#)));
       Name : Byte_Array (0 .. Len - 1);
    begin
       for I in Name'Range loop
-         if C64_Mode then
+         if Is_TED then
+            --  BASIC keeps strings under the ROM
+            Name (I) := P4S.RAM_Read (Word ((Ptr + I) mod 16#10000#));
+         elsif C64_Mode then
             Name (I) := Bus_Read (Word ((Ptr + I) mod 16#10000#));
          else
             Name (I) := Mem (Bank * 16#10000# + (Ptr + I) mod 16#10000#);
@@ -343,8 +377,8 @@ package body Machine is
    end Trap_Return;
 
    procedure Trap_Load is
-      Dev : constant Byte := Bus_Read (16#BA#);
-      SA  : constant Byte := Bus_Read (16#B9#);
+      Dev : constant Byte := Bus_Read (ZP_FA);
+      SA  : constant Byte := Bus_Read (ZP_SA);
       Verify : constant Boolean := CPU.A /= 0;
       Data : Byte_Array_Access;
       Found : Boolean;
@@ -390,7 +424,7 @@ package body Machine is
       begin
          if not Verify then
             for I in 2 .. Data'Last loop
-               if Current_Model = VIC20 then
+               if Current_Model in VIC20 | Plus4 | C16 then
                   Poke (Word ((Load_Addr + I - 2) mod 16#10000#), Data (I));
                else
                   Mem (Bank * 16#10000# + (Load_Addr + I - 2) mod 16#10000#)
@@ -400,8 +434,8 @@ package body Machine is
          end if;
          CPU.X := Byte (End_Addr mod 256);
          CPU.Y := Byte (End_Addr / 256);
-         Bus_Write (16#AE#, CPU.X);
-         Bus_Write (16#AF#, CPU.Y);
+         Bus_Write (ZP_EAL, CPU.X);
+         Bus_Write (ZP_EAL + 1, CPU.Y);
       end;
       Free (Data);
       Trap_Return (True);
@@ -411,7 +445,7 @@ package body Machine is
    end Trap_Load;
 
    procedure Trap_Save is
-      Dev : constant Byte := Bus_Read (16#BA#);
+      Dev : constant Byte := Bus_Read (ZP_FA);
       ZP  : constant Word := Word (CPU.A);
       Start_Addr : constant Natural := Natural (Bus_Read (ZP)) +
         256 * Natural (Bus_Read (ZP + 1));
@@ -430,7 +464,8 @@ package body Machine is
          Data (1) := Byte (Start_Addr / 256);
          for I in 0 .. End_Addr - Start_Addr - 1 loop
             Data (I + 2) :=
-              (if Current_Model = VIC20 then Peek (Word (Start_Addr + I))
+              (if Is_TED then P4S.RAM_Read (Word (Start_Addr + I))
+               elsif Current_Model = VIC20 then Peek (Word (Start_Addr + I))
                else Mem (Bank * 16#10000# + Start_Addr + I));
          end loop;
          Media.Save_File (Read_Name, Data, Ok);
@@ -460,8 +495,8 @@ package body Machine is
    end To_Petscii;
 
    procedure Feed_Keyboard is
-      Count_Addr : constant Word := (if C64_Mode then 16#C6# else 16#D0#);
-      Buf_Addr   : constant Word := (if C64_Mode then 16#0277# else 16#034A#);
+      Count_Addr : constant Word := Key_Count_Addr;
+      Buf_Addr   : constant Word := Key_Buffer_Addr;
       N : Natural;
    begin
       if Length (Type_Queue) = 0 or else Bus_Read (Count_Addr) /= 0 then
@@ -512,6 +547,7 @@ package body Machine is
 
       function VIC_Screen (I : Natural) return Byte is
         (if Current_Model = VIC20 then V20S.Screen_Byte (I)
+         elsif Is_TED then P4S.Screen_Byte (I)
          else C64S.Screen_Byte (I));
       function VDC_Screen (I : Natural) return Byte is
         (C64S.VDC_Screen_Byte (I));
@@ -576,10 +612,10 @@ package body Machine is
          function Addr return String is (Natural'Image (Natural (LA)));
       begin
          Auto_Path := To_Unbounded_String (Path);
-         if Current_Model = VIC20 then
+         if Current_Model in VIC20 | Plus4 | C16 then
             if LA in 16#0401# | 16#1001# | 16#1201# or else LA = 0 then
                Cmd := To_Unbounded_String ("LOAD" & Q & ",8" & NL & "RUN" & NL);
-            elsif LA = 16#A000# then
+            elsif LA = 16#A000# and then Current_Model = VIC20 then
                Cmd := To_Unbounded_String
                  ("LOAD" & Q & ",8,1" & NL & "SYS64802" & NL);
             else
@@ -689,7 +725,7 @@ package body Machine is
             --  A VIC-20 is at READY before a 1541 has finished starting
             --  up (about 2 seconds); a LOAD sent earlier goes unanswered.
             if (Screen_Contains ("READY.")
-                and then (Current_Model /= VIC20 or else not Drive_On
+                and then (Current_Model in C64 | C128 or else not Drive_On
                           or else Auto_Frames > 100))
               or else Auto_Frames > 600
             then
@@ -701,7 +737,7 @@ package body Machine is
             Auto_Frames := Auto_Frames + 1;
             --  Done once everything typed (including RUN) was consumed
             if (Length (Type_Queue) = 0 and then Auto_Frames > 10
-                and then Bus_Read (if C64_Mode then 16#C6# else 16#D0#) = 0)
+                and then Bus_Read (Key_Count_Addr) = 0)
               or else Auto_Frames > 600
             then
                Fast_Frames := 0;
@@ -789,6 +825,7 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.Save_State (S);
          when C64 | C128 => C64S.Save_State (S);
+         when Plus4 | C16 => P4S.Save_State (S);
       end case;
       Close (F);
       Ok := True;
@@ -818,7 +855,8 @@ package body Machine is
          return;
       end if;
       Model_Type'Read (S, Current_Model);
-      Has_CPU_Port := Current_Model in C64 | C128;
+      Has_CPU_Port := Current_Model /= VIC20;
+      Keyboard.Layout := (if Is_TED then Keyboard.Plus4 else Keyboard.C64);
       declare
          V : Video_Standard;
       begin
@@ -859,6 +897,7 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.Load_State (S);
          when C64 | C128 => C64S.Load_State (S);
+         when Plus4 | C16 => P4S.Load_State (S);
       end case;
       Close (F);
       IEC.Drive_Present := Drive_On;
@@ -1068,7 +1107,8 @@ package body Machine is
    function IO_Peek (Addr : Word) return Byte is
      (case Current_Model is
          when VIC20 => V20S.IO_Peek (Addr),
-         when C64 | C128 => C64S.IO_Peek (Addr));
+         when C64 | C128 => C64S.IO_Peek (Addr),
+         when Plus4 | C16 => P4S.IO_Peek (Addr));
 
    function Monitor_Peek (Addr : Word; Drive : Boolean := False) return Byte
    is
@@ -1109,8 +1149,9 @@ package body Machine is
                     CPU.Flag_Z, CPU.Flag_C) &
         (case Current_Model is
             when VIC20 => V20S.Beam_Text,
-            when C64 | C128 => C64S.Beam_Text) &
-        (if Has_CPU_Port then "  $01=$" & Disasm.Hex2 (C64S.Port_Read (1))
+            when C64 | C128 => C64S.Beam_Text,
+            when Plus4 | C16 => P4S.Beam_Text) &
+        (if Has_CPU_Port then "  $01=$" & Disasm.Hex2 (Peek (1))
          else "");
    end Register_Text;
 
@@ -1129,12 +1170,14 @@ package body Machine is
    function Frame_Flag return Boolean is
      (case Current_Model is
          when VIC20 => V20S.Frame_Done,
-         when C64 | C128 => C64S.Frame_Done);
+         when C64 | C128 => C64S.Frame_Done,
+         when Plus4 | C16 => P4S.Frame_Done);
 
    procedure Clear_Frame_Flag is
    begin
       V20S.Clear_Frame;
       C64S.Clear_Frame;
+      P4S.Clear_Frame;
    end Clear_Frame_Flag;
 
    procedure End_Of_Frame is
@@ -1142,6 +1185,7 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.End_Of_Frame;
          when C64 | C128 => C64S.End_Of_Frame;
+         when Plus4 | C16 => P4S.End_Of_Frame;
       end case;
       Feed_Keyboard;
       Keyboard.Tick_Typing;
@@ -1151,7 +1195,7 @@ package body Machine is
    end End_Of_Frame;
 
    function Stall_Pending return Boolean is
-     (Current_Model /= VIC20 and then C64S.Stalled);
+     (Current_Model in C64 | C128 and then C64S.Stalled);
 
    --  Advance the system by one CPU instruction (or one VIC stall period).
    --  Returns True when a CPU instruction was executed.
@@ -1161,7 +1205,7 @@ package body Machine is
       IRQ_Now, NMI_Now : Boolean;
       Executed : Boolean := False;
       Stall : constant Natural :=
-        (if Current_Model = VIC20 then 0 else C64S.Take_Stall);
+        (if Current_Model in C64 | C128 then C64S.Take_Stall else 0);
    begin
       if Stall > 0 then
          Clock_Devices (Stall);
@@ -1182,6 +1226,7 @@ package body Machine is
          case Current_Model is
             when VIC20 => V20S.Interrupt_Lines (IRQ_Now, NMI_Now);
             when C64 | C128 => C64S.Interrupt_Lines (IRQ_Now, NMI_Now);
+            when Plus4 | C16 => P4S.Interrupt_Lines (IRQ_Now, NMI_Now);
          end case;
          CPU.IRQ_Line := IRQ_Now;
          if NMI_Now and then not NMI_Prev then
@@ -1208,7 +1253,11 @@ package body Machine is
          end if;
          Instr_Ticked := 0;
          if Dev > 0 then
-            Clock_Devices (Dev);
+            if Is_TED then
+               P4S.Run_CPU (Dev);      --  TED cycles the CPU may use
+            else
+               Clock_Devices (Dev);
+            end if;
          end if;
       end if;
       if Drive_On then

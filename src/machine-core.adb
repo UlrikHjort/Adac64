@@ -31,6 +31,7 @@ with Media;
 use type Media.Media_Kind;
 with Machine.C64_System;
 with Machine.VIC20_System;
+with Machine.Plus4_System;
 
 package body Machine.Core is
 
@@ -57,7 +58,13 @@ package body Machine.Core is
       Target : constant Natural :=
         (if CPU.Current_Cycles > 0 then CPU.Current_Cycles - 1 else 0);
    begin
-      if In_Step and then not Fast_Mode and then Target > Instr_Ticked then
+      if In_Step and then Current_Model in Plus4 | C16 then
+         if Target > Instr_Ticked then
+            Plus4_System.Run_CPU (Target - Instr_Ticked);
+            Instr_Ticked := Target;
+         end if;
+         Plus4_System.Wait_Free;       --  the access's own cycle
+      elsif In_Step and then not Fast_Mode and then Target > Instr_Ticked then
          Clock_Devices (Target - Instr_Ticked);
          Instr_Ticked := Target;
       end if;
@@ -88,6 +95,7 @@ package body Machine.Core is
       case Current_Model is
          when VIC20 => VIC20_System.Rebuild_Map;
          when C64 | C128 => C64_System.Rebuild_Map;
+         when Plus4 | C16 => Plus4_System.Rebuild_Map;
       end case;
    end Rebuild_Map;
 
@@ -97,6 +105,7 @@ package body Machine.Core is
       case Current_Model is
          when VIC20 => VIC20_System.Clock (N);
          when C64 | C128 => C64_System.Clock (N);
+         when Plus4 | C16 => Plus4_System.Clock (N);
       end case;
    end Clock_Devices;
 
@@ -106,6 +115,7 @@ package body Machine.Core is
       case Current_Model is
          when VIC20 => return VIC20_System.IO_Read (Addr);
          when C64 | C128 => return C64_System.IO_Read (Addr);
+         when Plus4 | C16 => return Plus4_System.IO_Read (Addr);
       end case;
    end IO_Read;
 
@@ -115,6 +125,7 @@ package body Machine.Core is
       case Current_Model is
          when VIC20 => VIC20_System.IO_Write (Addr, Value);
          when C64 | C128 => C64_System.IO_Write (Addr, Value);
+         when Plus4 | C16 => Plus4_System.IO_Write (Addr, Value);
       end case;
    end IO_Write;
 
@@ -126,7 +137,9 @@ package body Machine.Core is
          Check_Watch (Addr, False);
       end if;
       if Addr < 2 and then Has_CPU_Port then
-         return C64_System.Port_Read (Addr);
+         return (if Current_Model in Plus4 | C16
+                 then Plus4_System.Port_Read (Addr)
+                 else C64_System.Port_Read (Addr));
       end if;
       if Page = 16#FF# and then not C64_Mode and then Addr <= 16#FF04# then
          return C64_System.MMU_Read (Natural (Addr - 16#FF00#));
@@ -146,7 +159,11 @@ package body Machine.Core is
          Check_Watch (Addr, True);
       end if;
       if Addr < 2 and then Has_CPU_Port then
-         C64_System.Port_Write (Addr, Value);
+         if Current_Model in Plus4 | C16 then
+            Plus4_System.Port_Write (Addr, Value);
+         else
+            C64_System.Port_Write (Addr, Value);
+         end if;
          return;
       end if;
       if Page = 16#FF# and then not C64_Mode and then Addr <= 16#FF04# then

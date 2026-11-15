@@ -85,6 +85,8 @@ package body Basic is
       new String'("monitor"), new String'("using"), new String'("until"),
       new String'("while"));
 
+   RLUM : aliased constant String := "rlum";    --  BASIC 3.5's $CE
+
    --  $CE xx functions and $FE xx statements
    CE_Names : constant array (2 .. 10) of access constant String :=
      (new String'("pot"), new String'("bump"), new String'("pen"),
@@ -293,10 +295,16 @@ package body Basic is
          for T in V2_Names'Range loop
             Try (V2_Names (T), T);
          end loop;
-         if D = V7 then
+         if D in V7 | V35 then
+            --  BASIC 3.5's tokens are 7.0's, with RLUM at $CE
             for T in V7_Names'Range loop
                Try (V7_Names (T), T);
             end loop;
+         end if;
+         if D = V35 then
+            Try (RLUM'Access, 16#CE#);
+         end if;
+         if D = V7 then
             for T in CE_Names'Range loop
                Try (CE_Names (T), 16#CE00# + T);
             end loop;
@@ -531,7 +539,7 @@ package body Basic is
          Report.all ("wrote " & Out_Path & " (" &
                        Trim (Natural (Lines.Length)'Image, Ada.Strings.Left) &
                        " lines," & Prog_Len'Image & " bytes, BASIC " &
-                       (if D = V2 then "V2" else "7.0") & ")");
+                       (case D is when V2 => "V2", when V35 => "3.5", when V7 => "7.0") & ")");
       end if;
    exception
       when others =>
@@ -651,7 +659,9 @@ package body Basic is
                                   Hex2 (Byte (X)) & "}");
                      end if;
                   end;
-               elsif D = V7 and then Natural (B) in V7_Names'Range
+               elsif D = V35 and then B = 16#CE# then
+                  Append (R, RLUM);
+               elsif D in V7 | V35 and then Natural (B) in V7_Names'Range
                  and then V7_Names (Natural (B)) /= null
                then
                   Append (R, V7_Names (Natural (B)).all);
@@ -691,7 +701,8 @@ package body Basic is
       Close (F);
       Ok := True;
       return Detokenize (File_Read'Access, Word (File_Load),
-                         (if File_Load = 16#1C01# then V7 else V2));
+                         (if File_Load = 16#1C01# then V7
+                          elsif File_Load = 16#1001# then V35 else V2));
    exception
       when others =>
          Ok := False;

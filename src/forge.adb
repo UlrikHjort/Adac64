@@ -516,7 +516,7 @@ package body Forge is
    end Close_Tab;
 
    C64_Template : constant String :=
-     "; New C64 program (ACME syntax) - F5 builds and runs it" & ASCII.LF &
+     "; New program (ACME syntax) - F5 builds and runs it" & ASCII.LF &
      ASCII.LF &
      "        *= $0801" & ASCII.LF &
      "        !basic                  ; 10 SYS start" & ASCII.LF &
@@ -543,15 +543,29 @@ package body Forge is
      ASCII.LF &
      "message !scr ""hello from adac64 forge"", 0" & ASCII.LF;
 
-   --  The C128 keeps BASIC programs at $1C01
+   --  BASIC start, border register and screen of the running machine (the
+   --  C128 keeps BASIC programs at $1C01, an unexpanded VIC-20 and the
+   --  C16 / Plus/4 at $1001)
    function Template return String is
       T : String := C64_Template;
-      I : constant Natural := Index (T, "*= $0801");
+      procedure Put (Old, New_Text : String) is
+         I : constant Natural := Index (T, Old);
+      begin
+         if I > 0 then
+            T (I .. I + Old'Length - 1) := New_Text;
+         end if;
+      end Put;
    begin
-      if Machine.Model = Machine.VIC20 and then I > 0 then
-         T (I .. I + 7) := "*= $1001";          --  (unexpanded VIC-20)
-      elsif not Machine.In_C64_Mode and then I > 0 then
-         T (I .. I + 7) := "*= $1c01";
+      if Machine.Model = Machine.VIC20 then
+         Put ("*= $0801", "*= $1001");
+         Put ("= $d020", "= $900f");
+         Put ("= $0400", "= $1e00");
+      elsif Machine.Model in Machine.Plus4 | Machine.C16 then
+         Put ("*= $0801", "*= $1001");
+         Put ("= $d020", "= $ff19");
+         Put ("= $0400", "= $0c00");
+      elsif not Machine.In_C64_Mode then
+         Put ("*= $0801", "*= $1c01");
       end if;
       return T;
    end Template;
@@ -796,14 +810,16 @@ package body Forge is
    end Report;
 
    function Dialect return Basic.Dialect is
-     (if Machine.In_C64_Mode or else Machine.Model = Machine.VIC20
+     (if Machine.Model in Machine.Plus4 | Machine.C16 then Basic.V35
+      elsif Machine.In_C64_Mode or else Machine.Model = Machine.VIC20
       then Basic.V2 else Basic.V7);
 
    --  Programs go where BASIC starts on the running machine
    procedure Set_Basic_Load is
    begin
       Basic.Load_Override :=
-        (if Machine.Model = Machine.VIC20 then Machine.Basic_Start else 0);
+        (if Machine.Model in Machine.VIC20 | Machine.Plus4 | Machine.C16
+         then Machine.Basic_Start else 0);
    end Set_Basic_Load;
 
    function Build_Basic (T : Positive) return Boolean is
@@ -813,7 +829,10 @@ package body Forge is
    begin
       Out_Buf.Set_Text ("");
       Print ("tokenizing " & Path & " (BASIC " &
-             (if Dialect = Basic.V2 then "V2, C64)" else "7.0, C128)"));
+             (case Dialect is
+                 when Basic.V2 => "V2, C64)",
+                 when Basic.V35 => "3.5, C16 / Plus/4)",
+                 when Basic.V7 => "7.0, C128)"));
       Print ("");
       Basic.Report := Report'Access;
       Set_Basic_Load;
@@ -1960,12 +1979,17 @@ package body Forge is
 
    --  Highlight the BASIC line being executed (CURLIN)
    procedure Track_Basic_Line is
-      Base : constant Word := (if Machine.In_C64_Mode then 16#39# else 16#3B#);
+      TED : constant Boolean := Machine.Model in Machine.Plus4 | Machine.C16;
+      Base : constant Word :=
+        (if Machine.Model = Machine.C128 and then not Machine.In_C64_Mode
+         then 16#3B# else 16#39#);
       Hi : constant Byte := Machine.Peek (Base + 1);
       --  Direct mode: CURLIN high byte $FF, or the KERNAL message flag
-      --  (MSGFLG, $9D) set to $80 by BASIC's READY loop
+      --  (MSGFLG, $9D; $9A on the C16 / Plus/4) set to $80 by BASIC's
+      --  READY loop
       Direct : constant Boolean :=
-        Hi = 16#FF# or else (Machine.Peek (16#9D#) and 16#80#) /= 0;
+        Hi = 16#FF#
+        or else (Machine.Peek (if TED then 16#9A# else 16#9D#) and 16#80#) /= 0;
       N  : constant Integer :=
         (if Direct then -1
          else Natural (Machine.Peek (Base)) + 256 * Natural (Hi));

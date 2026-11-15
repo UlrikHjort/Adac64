@@ -23,11 +23,11 @@
 -- WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 -- ***************************************************************************
 
---  The emulated computer (C64, C128 or VIC-20) as the rest of the program
---  sees it. The body holds what all models share (run loop, KERNAL
---  load/save traps, autostart, debugger, snapshots); Machine.Core the
---  memory and the 6502 bus; Machine.C64_System and Machine.VIC20_System
---  each model's chips, memory map and I/O.
+--  The emulated computer (C64, C128, VIC-20, C16 or Plus/4) as the rest of
+--  the program sees it. The body holds what all models share (run loop,
+--  KERNAL load/save traps, autostart, debugger, snapshots); Machine.Core
+--  the memory and the 6502 bus; Machine.C64_System, Machine.VIC20_System
+--  and Machine.Plus4_System each model's chips, memory map and I/O.
 
 with Ada.Strings.Unbounded;
 with Types; use Types;
@@ -35,7 +35,8 @@ with Drive1541;
 
 package Machine is
 
-   type Model_Type is (C64, C128, VIC20);
+   type Model_Type is (C64, C128, VIC20, Plus4, C16);
+   --  Plus4: 64K and the 3-plus-1 ROMs; C16: the same machine with 16K
 
    --  VIC-20 RAM expansion (takes effect at the next reset):
    --    +3K  block 0 ($0400-$0FFF)       BASIC at $0401, screen $1E00
