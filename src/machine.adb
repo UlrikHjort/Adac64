@@ -2283,12 +2283,6 @@ package body Machine is
       F : File_Type;
       S : Stream_Access;
    begin
-      if Current_Model = VIC20 then
-         Ok := False;
-         Err := To_Unbounded_String
-           ("snapshots are not supported for the VIC-20 yet");
-         return;
-      end if;
       Create (F, Out_File, Path);
       S := Stream (F);
       String'Write (S, Snapshot_Magic);
@@ -2332,6 +2326,15 @@ package body Machine is
       SID.Save_State (S);
       VDC.Save_State (S);
       Drive1541.Save_State (S);
+      if Current_Model = VIC20 then
+         VIA.Chip'Write (S, V20_VIA1);
+         VIA.Chip'Write (S, V20_VIA2);
+         V20.Save_State (S);
+         VIC20_Memory'Write (S, V20_Mem);
+         Boolean'Write (S, V20_Block5);
+         V20_Block_Set'Write (S, V20_Cart);
+         String'Output (S, To_String (V20_Cart_Name));
+      end if;
       Close (F);
       Ok := True;
    exception
@@ -2349,12 +2352,6 @@ package body Machine is
       Magic : String (Snapshot_Magic'Range);
       P : Byte;
    begin
-      if Current_Model = VIC20 then
-         Ok := False;
-         Err := To_Unbounded_String
-           ("snapshots are not supported for the VIC-20 yet");
-         return;
-      end if;
       Ok := False;
       Open (F, In_File, Path);
       S := Stream (F);
@@ -2423,6 +2420,16 @@ package body Machine is
       SID.Load_State (S);
       VDC.Load_State (S);
       Drive1541.Load_State (S);
+      if Current_Model = VIC20 then
+         VIA.Chip'Read (S, V20_VIA1);
+         VIA.Chip'Read (S, V20_VIA2);
+         V20.Load_State (S);
+         VIC20_Memory'Read (S, V20_Mem);
+         Boolean'Read (S, V20_Block5);
+         V20_Block_Set'Read (S, V20_Cart);
+         V20_Cart_Name := To_Unbounded_String (String'Input (S));
+         Drive1541.Set_Host_Clock (V20.Clock_Hz);
+      end if;
       Close (F);
       IEC.Drive_Present := Drive_On;
       Keyboard.Release_All;

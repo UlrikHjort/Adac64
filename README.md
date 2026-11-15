@@ -118,8 +118,10 @@ reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Input →
 *VIC-20 light pen on the mouse* turns the mouse into a light pen: while
 the left button is held (pen against the screen) the VIC latches the beam
 position into `$9006`/`$9007` when the beam passes the pen, and the pen's
-switch shows on the fire line. Not there yet on the VIC-20: bank-switching
-cartridges (Mega-Cart, Final Expansion), snapshots.
+switch shows on the fire line. Snapshots (Machine menu, Shift+F9 /
+Shift+F10) work on the VIC-20 too, including the RAM expansion and a
+cartridge. Not there yet on the VIC-20: bank-switching cartridges
+(Mega-Cart, Final Expansion).
 
 **Paddles** (VIC-20 and C64; Input menu or `--paddles mouse|joystick`):
 on the mouse, the position over the picture turns the two paddles (left /

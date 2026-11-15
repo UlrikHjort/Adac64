@@ -50,6 +50,13 @@ if command -v cartconv >/dev/null; then
   cartconv -t vic20 -i $T/c8.prg -o $T/c8.crt >/dev/null 2>&1
   cart "VICE .crt" $T/c8.crt 2E
 fi
+# snapshots: 600 frames + snapshot + 300 frames = 900 frames straight
+# (the test cartridge counts in $fb all the time)
+R1=$($B --vic20 --headless 900 --png $T/s.png --monitor "m fb fb" $T/c8.prg | grep '^00FB' | cut -c7-8)
+$B --vic20 --headless 600 --png $T/s.png --save-snapshot $T/c.snap $T/c8.prg >/dev/null
+R2=$($B --vic20 --headless 300 --png $T/s.png --load-snapshot $T/c.snap --monitor "m fb fb" | grep '^00FB' | cut -c7-8)
+[ -n "$R1" ] && [ "$R1" = "$R2" ] || fail "snapshot ($R1 / $R2)"
+echo "vic20: snapshot: resumed run matches the straight run (\$fb = $R1)"
 # video timing: VIA1 timer between two passes of raster line 0
 $B --asm tests/vic20_frame.asm -o $T/frame.prg >/dev/null
 for std in "pal 22143" "ntsc 16956"; do

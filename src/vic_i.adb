@@ -358,4 +358,63 @@ package body VIC_I is
       end loop;
    end Tick;
 
+   type Reg_Array is array (0 .. 15) of Byte;
+   type Voice_Array is array (0 .. 3) of Voice;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
+   is
+   begin
+      Reg_Array'Write (S, Reg_Array (Regs));
+      Standard_Kind'Write (S, Standard);
+      Natural'Write (S, Line);
+      Natural'Write (S, Cycle);
+      Byte'Write (S, LP_X);
+      Byte'Write (S, LP_Y);
+      Voice_Array'Write (S, Voice_Array (Voices));
+      Unsigned_16'Write (S, Noise_LFSR);
+      Area_State'Write (S, Area);
+      Natural'Write (S, Y_Counter);
+      Natural'Write (S, Row_Counter);
+      Natural'Write (S, Memptr);
+      Boolean'Write (S, H_Open);
+      Natural'Write (S, H_Start);
+      Natural'Write (S, Line_Cols);
+      Boolean'Write (S, Line_Blank);
+      Boolean'Write (S, Was_Blank);
+   end Save_State;
+
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
+   is
+      R : Reg_Array;
+      V : Voice_Array;
+      Std : Standard_Kind;
+   begin
+      Reg_Array'Read (S, R);
+      Standard_Kind'Read (S, Std);
+      Set_Standard (Std);
+      for I in R'Range loop
+         Regs (I) := R (I);
+      end loop;
+      Natural'Read (S, Line);
+      Natural'Read (S, Cycle);
+      Byte'Read (S, LP_X);
+      Byte'Read (S, LP_Y);
+      Voice_Array'Read (S, V);
+      for I in V'Range loop
+         Voices (I) := V (I);
+      end loop;
+      Unsigned_16'Read (S, Noise_LFSR);
+      Area_State'Read (S, Area);
+      Natural'Read (S, Y_Counter);
+      Natural'Read (S, Row_Counter);
+      Natural'Read (S, Memptr);
+      Boolean'Read (S, H_Open);
+      Natural'Read (S, H_Start);
+      Natural'Read (S, Line_Cols);
+      Boolean'Read (S, Line_Blank);
+      Boolean'Read (S, Was_Blank);
+      Cell := Natural'Last;
+      Frame_Done := False;
+   end Load_State;
+
 end VIC_I;

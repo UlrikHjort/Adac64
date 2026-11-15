@@ -5,6 +5,7 @@
 --  Fetch reads the VIC's 14-bit address space; Color reads the 4-bit
 --  colour RAM (index 0 .. 1023).
 
+with Ada.Streams;
 with Types; use Types;
 
 generic
@@ -35,5 +36,8 @@ package VIC_I is
    function Raster return Natural;
    function Screen_Address return Word;   --  VIC address of the matrix
    function Register (Reg : Natural) return Byte;
+
+   procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
+   procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class);
 
 end VIC_I;
