@@ -55,6 +55,7 @@ with Source_View;
 with Sprite_Editor;
 with Charset_Editor;
 with Screen_Editor;
+with Disk_Image;
 use type Source_View.Language;
 with Interfaces; use Interfaces;
 
@@ -97,6 +98,8 @@ package body Forge is
    Last_Kind   : Program_Kind := No_Program;
    Basic_File  : Unbounded_String;    --  last tokenized BASIC source
    Basic_Line  : Integer := -1;       --  BASIC line shown as running
+   Last_PRG    : Unbounded_String;    --  the program the last build wrote
+   Last_Source : Unbounded_String;    --  ... and its main source file
    Last_Basic_Check : Time := Clock;
    Last_Update : Time := Clock;
    Stop_Cycles : Long_Long_Integer := 0;
@@ -765,6 +768,8 @@ package body Forge is
       Print ("");
       Basic.Report := Report'Access;
       Basic.Build (Path, Dialect, PRG, Ok);
+      Last_PRG := PRG;
+      Last_Source := To_Unbounded_String (Path);
       for E in 1 .. Basic.Error_Count loop
          if Basic.Error_Line (E) > 0 then
             Source_View.Add_Mark (Tabs (T).Buffer, Source_View.Error_Line,
@@ -802,6 +807,14 @@ package body Forge is
       if Tabs (Current_Tab).Lang = Source_View.Basic_Text then
          return Build_Basic (Current_Tab);
       end if;
+      --  In a .disk tab: rebuild the program the disk was made for
+      if Index (To_String (Tabs (Current_Tab).Path), ".disk",
+                Ada.Strings.Backward) > 0
+        and then Last_Kind = Basic_Program
+        and then Find_Tab (To_String (Basic_File)) > 0
+      then
+         return Build_Basic (Find_Tab (To_String (Basic_File)));
+      end if;
       if Main_File = Null_Unbounded_String
         or else Basic.Is_Source (To_String (Main_File))
       then
@@ -813,6 +826,8 @@ package body Forge is
       Print ("");
       Asm.Report := Report'Access;
       Asm.Build (To_String (Main_File), PRG, Ok);
+      Last_PRG := PRG;
+      Last_Source := Main_File;
       Built := Asm.Has_Output and then not Asm.Has_Errors;
       for I in Tabs'Range loop
          if Tabs (I).Used then
@@ -942,6 +957,211 @@ package body Forge is
    --  Actions
    ---------------------------------------------------------------------
 
+   ---------------------------------------------------------------------
+   --  Disk images: <main>.disk lists the files, <main>.d64 is written
+   ---------------------------------------------------------------------
+
+   function Without_Ext (P : String) return String is
+      Dot : constant Natural := Index (P, ".", Ada.Strings.Backward);
+      Sl  : constant Natural := Index (P, "/", Ada.Strings.Backward);
+   begin
+      return (if Dot > Sl then P (P'First .. Dot - 1) else P);
+   end Without_Ext;
+
+   function Disk_Spec_Path return String is
+     (Without_Ext (To_String (Last_Source)) & ".disk");
+
+   function Default_Spec return String is
+      Base : constant String :=
+        Ada.Directories.Base_Name (To_String (Last_Source));
+   begin
+      return "; Disk image contents (Build -> Build disk image writes " &
+        Base & ".d64)" & ASCII.LF &
+        "name = """ & To_Upper (Base) & """" & ASCII.LF &
+        "id   = 01" & ASCII.LF &
+        ";" & ASCII.LF &
+        "; one line per file: ""name on disk"" = file [, seq | usr]" &
+        ASCII.LF &
+        "; * is the program the build makes; it should come first, so" &
+        ASCII.LF &
+        "; LOAD""*"",8,1 and autostart pick it.  Paths are relative to" &
+        " this file." & ASCII.LF &
+        """" & Base & """ = *" & ASCII.LF &
+        "; ""music"" = music.prg" & ASCII.LF &
+        "; ""level 1"" = levels/level1.bin, seq" & ASCII.LF;
+   end Default_Spec;
+
+   function Read_Whole (Path : String) return String is
+      Ok : Boolean;
+      T : constant String := Read_File (Path, Ok);
+   begin
+      return (if Ok then T else "");
+   end Read_Whole;
+
+   function Load_Bytes (Path : String; Ok : out Boolean) return Byte_Array is
+      use Ada.Streams.Stream_IO;
+      F : Ada.Streams.Stream_IO.File_Type;
+   begin
+      Open (F, In_File, Path);
+      declare
+         D : Byte_Array (0 .. Natural (Size (F)) - 1);
+      begin
+         Byte_Array'Read (Stream (F), D);
+         Close (F);
+         Ok := True;
+         return D;
+      end;
+   exception
+      when others =>
+         Ok := False;
+         return (1 .. 0 => 0);
+   end Load_Bytes;
+
+   --  Write the D64; returns its path ("" on failure)
+   function Make_Disk return String is
+      Spec_Path : constant String := Disk_Spec_Path;
+      Spec : constant String :=
+        (if Ada.Directories.Exists (Spec_Path) then Read_Whole (Spec_Path)
+         else Default_Spec);
+      Dir : constant String :=
+        Ada.Directories.Containing_Directory (To_String (Last_Source));
+      D64 : constant String := Without_Ext (To_String (Last_Source)) & ".d64";
+      Name : Unbounded_String :=
+        To_Unbounded_String
+          (To_Upper (Ada.Directories.Base_Name (To_String (Last_Source))));
+      Id : Unbounded_String := To_Unbounded_String ("01");
+      Line_No : Natural := 0;
+      Failed : Boolean := False;
+      Created : Boolean := False;
+      From : Positive := Spec'First;
+
+      function Unquote (T : String) return String is
+        (if T'Length >= 2 and then T (T'First) = '"'
+           and then T (T'Last) = '"'
+         then T (T'First + 1 .. T'Last - 1) else T);
+
+      procedure Err (Msg : String) is
+      begin
+         Print (Ada.Directories.Simple_Name (Spec_Path) & ":" &
+                Trim (Line_No'Image, Ada.Strings.Left) & ": error: " & Msg);
+         Failed := True;
+      end Err;
+
+      procedure Line (Raw : String) is
+         Semi : Natural := 0;
+         In_Q : Boolean := False;
+      begin
+         for I in Raw'Range loop
+            if Raw (I) = '"' then
+               In_Q := not In_Q;
+            elsif Raw (I) = ';' and then not In_Q then
+               Semi := I;
+               exit;
+            end if;
+         end loop;
+         declare
+            T : constant String :=
+              Trim (Raw (Raw'First .. (if Semi > 0 then Semi - 1
+                                       else Raw'Last)), Ada.Strings.Both);
+            Eq : constant Natural := Index (T, "=");
+         begin
+            if T = "" then
+               return;
+            end if;
+            if Eq = 0 then
+               Err ("expected  key = value  or  ""name"" = file");
+               return;
+            end if;
+            declare
+               Key : constant String :=
+                 Trim (T (T'First .. Eq - 1), Ada.Strings.Both);
+               Val : constant String :=
+                 Trim (T (Eq + 1 .. T'Last), Ada.Strings.Both);
+            begin
+               if Key = "name" then
+                  Name := To_Unbounded_String (Unquote (Val));
+               elsif Key = "id" then
+                  Id := To_Unbounded_String (Unquote (Val));
+               elsif Key'Length >= 2 and then Key (Key'First) = '"' then
+                  if not Created then
+                     Disk_Image.Create (To_String (Name), To_String (Id));
+                     Created := True;
+                  end if;
+                  declare
+                     Comma : constant Natural := Index (Val, ",");
+                     File_Part : constant String :=
+                       Trim ((if Comma > 0 then Val (Val'First .. Comma - 1)
+                              else Val), Ada.Strings.Both);
+                     Kind_Part : constant String :=
+                       To_Lower (if Comma > 0 then Trim (Val (Comma + 1 ..
+                                   Val'Last), Ada.Strings.Both) else "prg");
+                     Path : constant String :=
+                       (if File_Part = "*" then To_String (Last_PRG)
+                        elsif File_Part (File_Part'First) = '/'
+                        then Unquote (File_Part)
+                        else Dir & "/" & Unquote (File_Part));
+                     Ok : Boolean;
+                     Data : constant Byte_Array := Load_Bytes (Path, Ok);
+                  begin
+                     if not Ok then
+                        Err ("cannot read " & Path);
+                        return;
+                     end if;
+                     if Kind_Part not in "prg" | "seq" | "usr" then
+                        Err ("file type must be prg, seq or usr");
+                        return;
+                     end if;
+                     Disk_Image.Add_File
+                       (Unquote (Key), Data,
+                        (if Kind_Part = "seq" then Disk_Image.SEQ
+                         elsif Kind_Part = "usr" then Disk_Image.USR
+                         else Disk_Image.PRG), Ok);
+                     if Ok then
+                        Print ("  " & Unquote (Key) & "  " &
+                               Trim (Natural'Image ((Data'Length + 253) / 254),
+                                     Ada.Strings.Left) & " blocks  (" &
+                               Ada.Directories.Simple_Name (Path) & ")");
+                     else
+                        Err (Disk_Image.Error);
+                     end if;
+                  end;
+               else
+                  Err ("unknown key " & Key);
+               end if;
+            end;
+         end;
+      end Line;
+   begin
+      for I in Spec'Range loop
+         if Spec (I) = ASCII.LF or else I = Spec'Last then
+            Line_No := Line_No + 1;
+            Line (Spec (From .. (if Spec (I) = ASCII.LF then I - 1 else I)));
+            From := I + 1;
+         end if;
+      end loop;
+      if not Created then
+         Disk_Image.Create (To_String (Name), To_String (Id));
+      end if;
+      if Failed then
+         return "";
+      end if;
+      declare
+         Ok : Boolean;
+      begin
+         Disk_Image.Save (D64, Ok);
+         if not Ok then
+            Print ("cannot write " & D64);
+            return "";
+         end if;
+      end;
+      Print ("wrote " & Ada.Directories.Simple_Name (D64) & ":" &
+             Disk_Image.File_Count'Image &
+             " files," & Disk_Image.Blocks_Free'Image & " blocks free" &
+             (if Ada.Directories.Exists (Spec_Path) then ""
+              else "  (Build -> Edit disk contents adds more files)"));
+      return D64;
+   end Make_Disk;
+
    function Unsaved_Ok return Boolean is
       Names : Unbounded_String;
    begin
@@ -969,7 +1189,8 @@ package body Forge is
    type Action is
      (A_New, A_New_Basic, A_Import_PRG, A_Fetch_Basic, A_Open, A_Save, A_Save_As, A_Close_Tab, A_Set_Main,
       A_Undo, A_Redo, A_Close,
-      A_Build, A_Run, A_Rebuild_Run, A_Pause, A_Step_Into, A_Step_Over,
+      A_Build, A_Run, A_Rebuild_Run, A_Disk, A_Disk_Run, A_Disk_Edit,
+      A_Pause, A_Step_Into, A_Step_Over,
       A_Step_Out, A_Run_To_Cursor, A_Toggle_BP, A_Clear_BPs, A_Reset,
       A_Emulator, A_Sprites, A_Charset, A_Screen, A_Help);
 
@@ -1066,6 +1287,52 @@ package body Forge is
                Resumed;
             elsif Build then
                Run_Program;
+            end if;
+         when A_Disk =>
+            if Build then
+               Dummy := Make_Disk /= "";
+            end if;
+         when A_Disk_Run =>
+            if Build then
+               declare
+                  D64 : constant String := Make_Disk;
+                  Ok : Boolean;
+               begin
+                  if D64 /= "" then
+                     if Machine.Break_Hit then
+                        Machine.Resume;
+                     end if;
+                     Machine.Autostart (D64, Ok);
+                     Resumed;
+                     Print (if Ok then "running from " &
+                              Ada.Directories.Simple_Name (D64) &
+                              " in drive 8"
+                            else "cannot attach " & D64);
+                     if Parent_W /= null then
+                        Parent_W.Present;
+                     end if;
+                  end if;
+               end;
+            end if;
+         when A_Disk_Edit =>
+            if Last_Source = Null_Unbounded_String then
+               if T > 0 then
+                  Last_Source := (if Tabs (T).Lang = Source_View.Basic_Text
+                                  or else Main_File = Null_Unbounded_String
+                                  then Tabs (T).Path else Main_File);
+               end if;
+            end if;
+            if Last_Source /= Null_Unbounded_String then
+               declare
+                  P : constant String := Disk_Spec_Path;
+               begin
+                  if not Ada.Directories.Exists (P) then
+                     Dummy := Write_File (P, Default_Spec);
+                  end if;
+                  Dummy := Open_Path (P) > 0;
+               end;
+            else
+               Print ("save the program first");
             end if;
          when A_Rebuild_Run =>
             if Build then
@@ -1423,6 +1690,11 @@ package body Forge is
       Item (M, "_Build", A_Build, GDK_F7);
       Item (M, "Build and _run / continue", A_Run, GDK_F5);
       Item (M, "Rebuild and run", A_Rebuild_Run, GDK_F5, Control_Mask);
+      Separator (M);
+      Item (M, "Build _disk image (D64)", A_Disk, GDK_F7, Shift_Mask);
+      Item (M, "Build disk and run _from disk", A_Disk_Run, GDK_F5,
+            Shift_Mask);
+      Item (M, "_Edit disk contents", A_Disk_Edit);
       M := Menu ("_Debug");
       Item (M, "_Pause", A_Pause, GDK_F6);
       Item (M, "Step _into", A_Step_Into, GDK_F11);

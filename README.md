@@ -282,6 +282,28 @@ running program's text screen together with its charset and colours.
 (2002 bytes; plain 1000-byte screens load too); *Export .asm* writes
 `name_chars` / `name_colors` tables and the two colours as constants.
 
+### Disk images
+
+Build → Build disk image (Shift+F7) builds the program and writes
+`<main>.d64` next to the source; Build → Build disk and run from disk
+(Shift+F5) also puts it in drive 8 and autostarts it, so the program is
+loaded through the emulated 1541 like a released disk. By default the
+disk holds just the program. Build → Edit disk contents creates
+`<main>.disk`, a small text file listing what goes on the disk:
+
+    name = "MY GAME"
+    id   = 01
+    "my game" = *                      ; the program the build makes
+    "music"   = music.prg
+    "level 1" = levels/level1.bin, seq ; prg (default), seq or usr
+
+Files are laid out as a 1541 writes them (tracks next to the directory
+first, sector interleave 10), and errors in the list are reported with
+their line like assembler errors. On the command line,
+`bin/adac64 --mkd64 disk.d64 a.prg b.prg notes.seq` does the same (names
+from the file names); `tests/disk_test.sh` checks the files and BAM of
+such a disk and loads the program from it through the emulated drive.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -329,9 +351,10 @@ Disk images can also be dropped onto the window.
     src/sprite_*     sprite editor (data model / window)
     src/charset_*    charset editor (data model / window)
     src/screen_*     screen editor (data model / window)
+    src/disk_image.* D64 writer
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
     tests/           CPU, keyboard, debugger, sprite, charset, screen
-                     and BASIC tests,
+                     BASIC and disk tests,
                      mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py

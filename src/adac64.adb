@@ -12,6 +12,7 @@
 --    --asm SRC [-o OUT] assemble a source file and exit
 --    --basic SRC        tokenize a .bas file (BASIC 7.0 with --c128) and exit
 --    --list PRG         print the BASIC listing of a .prg file
+--    --mkd64 OUT FILE.. write a new D64 with the files (name = file name)
 --    --forge [SRC]     open the forge (assembler IDE and debugger)
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
@@ -46,6 +47,9 @@ with Drive1541;
 with SID;
 with Asm;
 with Basic;
+with Disk_Image;
+with Ada.Directories;
+with Ada.Streams.Stream_IO;
 with Wav_Sink;
 
 procedure AdaC64 is
@@ -163,6 +167,43 @@ begin
                Set_Exit_Status (Failure);
             end if;
             return;
+         elsif A = "--mkd64" and then I < Argument_Count then
+            declare
+               Out_Path : constant String := Argument (I + 1);
+            begin
+               Disk_Image.Create
+                 (Ada.Characters.Handling.To_Upper
+                    (Ada.Directories.Base_Name (Out_Path)), "01");
+               for K in I + 2 .. Argument_Count loop
+                  declare
+                     use Ada.Streams.Stream_IO;
+                     P : constant String := Argument (K);
+                     F : Ada.Streams.Stream_IO.File_Type;
+                  begin
+                     Open (F, In_File, P);
+                     declare
+                        D : Types.Byte_Array (0 .. Natural (Size (F)) - 1);
+                     begin
+                        Types.Byte_Array'Read (Stream (F), D);
+                        Close (F);
+                        Disk_Image.Add_File
+                          (Ada.Directories.Base_Name (P), D,
+                           (if Ada.Directories.Extension (P) in "seq" | "SEQ"
+                            then Disk_Image.SEQ else Disk_Image.PRG), Ok);
+                        if not Ok then
+                           Put_Line (Standard_Error, Disk_Image.Error);
+                           Set_Exit_Status (Failure);
+                           return;
+                        end if;
+                     end;
+                  end;
+               end loop;
+               Disk_Image.Save (Out_Path, Ok);
+               Put_Line ("wrote " & Out_Path & ":" &
+                         Disk_Image.File_Count'Image & " files," &
+                         Disk_Image.Blocks_Free'Image & " blocks free");
+               return;
+            end;
          elsif A = "--forge" then
             GUI.Open_Forge := True;
             if I < Argument_Count and then Forge_File_Type (Argument (I + 1))
