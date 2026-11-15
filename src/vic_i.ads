@@ -25,6 +25,8 @@ package VIC_I is
 
    Frame_Done : Boolean := False;   --  set at the end of every frame
 
+   Pot_X, Pot_Y : Byte := 16#FF#;   --  paddle inputs ($9008 / $9009)
+
    function Raster return Natural;
    function Screen_Address return Word;   --  VIC address of the matrix
    function Register (Reg : Natural) return Byte;

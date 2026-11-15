@@ -12,6 +12,7 @@ with CIA;
 with SID;
 with VDC;
 with Keyboard;
+with Paddles;
 with Media;
 with Video;
 with Disasm;
@@ -513,9 +514,35 @@ package body Machine is
    --  I/O
    ---------------------------------------------------------------------
 
+   --  The port the paddles are plugged into (the joystick port setting)
+   function Paddle_Port return Natural is
+     (if Keyboard."=" (Keyboard.Joystick_Port, 1) then 1 else 2);
+
+   --  Joystick bits of a control port; with paddles in that port only
+   --  their buttons (on the left / right lines)
+   function Port_Joy (Port : Natural) return Byte is
+     (if Paddles.Active and then Port = Paddle_Port then Paddles.Fire_Bits
+      elsif Port = 1 then Keyboard.Joy1 else Keyboard.Joy2);
+
+   --  SID POTX / POTY: CIA1 port A bits 6 / 7 select which control port
+   --  the SID reads
+   procedure Update_SID_Pots is
+      Sel : constant Byte := CIA.Port_A_Out (CIA1) and 16#C0#;
+      Port : constant Natural :=
+        (if Sel = 16#40# then 1 elsif Sel = 16#80# then 2 else 0);
+   begin
+      if Paddles.Active and then Port = Paddle_Port then
+         SID.Pot_X := Paddles.Value (1);
+         SID.Pot_Y := Paddles.Value (2);
+      else
+         SID.Pot_X := 16#FF#;
+         SID.Pot_Y := 16#FF#;
+      end if;
+   end Update_SID_Pots;
+
    function CIA1_Port_Read (Reg : Natural) return Byte is
-      PA : constant Byte := CIA.Port_A_Out (CIA1) and not Keyboard.Joy2;
-      PB : constant Byte := CIA.Port_B_Out (CIA1) and not Keyboard.Joy1;
+      PA : constant Byte := CIA.Port_A_Out (CIA1) and not Port_Joy (2);
+      PB : constant Byte := CIA.Port_B_Out (CIA1) and not Port_Joy (1);
       Ext : constant Byte := (if VIC.Has_C128_Regs then VIC.Key_Lines
                               else 16#FF#);
    begin
@@ -615,7 +642,10 @@ package body Machine is
      ((Shift_Right (Keyboard.Matrix (C64_Col_Of_Row (Row)),
                     C64_Row_Of_Col (Col)) and 1) /= 0);
 
-   function V20_Joy return Byte is (Keyboard.Joy1 or Keyboard.Joy2);
+   --  The joystick lines; with paddles they carry the paddle buttons
+   function V20_Joy return Byte is
+     (if Paddles.Active then Paddles.Fire_Bits
+      else Keyboard.Joy1 or Keyboard.Joy2);
 
    procedure V20_Inputs is
       Cols : constant Byte := V20_VIA2.ORB or not V20_VIA2.DDRB;
@@ -672,6 +702,8 @@ package body Machine is
    begin
       case Addr is
          when 16#9000# .. 16#90FF# =>
+            V20.Pot_X := (if Paddles.Active then Paddles.Value (1) else 16#FF#);
+            V20.Pot_Y := (if Paddles.Active then Paddles.Value (2) else 16#FF#);
             return V20.Read (Natural (Addr and 15));
          when 16#9100# .. 16#93FF# =>
             V20_Inputs;
@@ -856,6 +888,7 @@ package body Machine is
          when 16#D000# .. 16#D3FF# =>
             return VIC.Read (Natural (Addr and 16#3F#));
          when 16#D400# .. 16#D7FF# =>
+            Update_SID_Pots;
             if Current_Model = C128 then
                case Addr is
                   when 16#D500# .. 16#D5FF# =>
@@ -2650,6 +2683,10 @@ package body Machine is
          case Addr is
             when 16#9000# .. 16#90FF# =>
                return (if (Addr and 15) in 3 | 4 then V20.Read (Natural (Addr and 15))
+                       elsif (Addr and 15) = 8
+                       then (if Paddles.Active then Paddles.Value (1) else 16#FF#)
+                       elsif (Addr and 15) = 9
+                       then (if Paddles.Active then Paddles.Value (2) else 16#FF#)
                        else V20.Register (Natural (Addr and 15)));
             when 16#9100# .. 16#93FF# =>
                return (if (Addr and 16#10#) /= 0
@@ -2784,6 +2821,7 @@ package body Machine is
 
       Feed_Keyboard;
       Keyboard.Tick_Typing;
+      Paddles.Tick (Keyboard.Joy1 or Keyboard.Joy2);
       Autostart_Step;
       Frames := Frames + 1;
    end End_Of_Frame;

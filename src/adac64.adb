@@ -15,6 +15,8 @@
 --    --list PRG         print the BASIC listing of a .prg file
 --    --mkd64 OUT FILE.. write a new D64 with the files (name = file name)
 --    --forge [SRC]     open the forge (assembler IDE and debugger)
+--    --paddles off|mouse|joystick  paddle input (default: last used)
+--    --paddle-pos FX FY  headless: mouse position (0..1) for mouse paddles
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
@@ -47,6 +49,7 @@ with REU;
 with Drive1541;
 with SID;
 with Asm;
+with Paddles;
 with Basic;
 with Disk_Image;
 with Ada.Directories;
@@ -251,6 +254,14 @@ begin
                   end if;
                end;
             end if;
+         elsif A = "--paddles" and then I < Argument_Count then
+            I := I + 1;
+            Paddles.Mode := Paddles.Mode_Kind'Value (Argument (I));
+            GUI.Paddles_Given := True;
+         elsif A = "--paddle-pos" and then I + 1 < Argument_Count then
+            Paddles.Set_Mouse (Float'Value (Argument (I + 1)),
+                               Float'Value (Argument (I + 2)));
+            I := I + 2;
          elsif A = "--c64" then
             Model := Machine.C64;
             Model_Given := True;

@@ -44,6 +44,7 @@ with SID;
 use type SID.Chip_Model;
 with Blit;
 with Video;
+with Paddles; use type Paddles.Mode_Kind;
 with Monitor;
 with Forge;
 with Settings;
@@ -85,6 +86,7 @@ package body GUI is
    Item_FastLd  : Gtk_Check_Menu_Item;
    Item_C64, Item_C128, Item_VIC20 : Gtk_Radio_Menu_Item;
    V20_Items : array (Machine.VIC20_Memory) of Gtk_Radio_Menu_Item;
+   Paddle_Items : array (Paddles.Mode_Kind) of Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
    Was_VDC : Boolean := False;
 
@@ -184,6 +186,9 @@ package body GUI is
          when VIC20 => Item_VIC20.Set_Active (True);
       end case;
       V20_Items (Machine.VIC20_Memory_Config).Set_Active (True);
+      if Paddle_Items (Paddles.Mode) /= null then
+         Paddle_Items (Paddles.Mode).Set_Active (True);
+      end if;
       for M in Machine.VIC20_Memory loop
          V20_Items (M).Set_Sensitive (Machine.Model = VIC20);
       end loop;
@@ -619,6 +624,7 @@ package body GUI is
       Settings.Set ("fastload", Machine.Fast_Kernal_Load);
       Settings.Set ("mute", Audio.Muted);
       Settings.Set ("positional", Keyboard.Positional);
+      Settings.Set ("paddles", Paddles.Mode_Kind'Image (Paddles.Mode));
       Settings.Set ("integerscale", Integer_Scale);
       Settings.Set ("crt", CRT_Filter);
       Settings.Set ("lastdir", To_String (Last_Dir));
@@ -870,6 +876,44 @@ package body GUI is
    --  Event handlers
    ---------------------------------------------------------------------
 
+   --  Where the picture was drawn last (for paddles on the mouse)
+   Pic_X, Pic_Y : Float := 0.0;
+   Pic_W, Pic_H : Float := 1.0;
+
+   function On_Area_Motion (Self : access Gtk_Widget_Record'Class;
+                            Event : Gdk_Event_Motion) return Boolean is
+      pragma Unreferenced (Self);
+   begin
+      Paddles.Set_Mouse ((Float (Event.X) - Pic_X) / Pic_W,
+                         (Float (Event.Y) - Pic_Y) / Pic_H);
+      return False;
+   end On_Area_Motion;
+
+   function On_Area_Button (Self : access Gtk_Widget_Record'Class;
+                            Event : Gdk_Event_Button) return Boolean is
+      pragma Unreferenced (Self);
+   begin
+      if Paddles.Mode = Paddles.Mouse and then Event.Button in 1 | 3 then
+         Paddles.Set_Mouse_Button ((if Event.Button = 1 then 1 else 2),
+                                   Event.The_Type = Button_Press);
+         return True;
+      end if;
+      return False;
+   end On_Area_Button;
+
+   procedure On_Paddles (Item : access Gtk_Check_Menu_Item_Record'Class) is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      for M in Paddles.Mode_Kind loop
+         if Gtk_Radio_Menu_Item (Item) = Paddle_Items (M) then
+            Paddles.Mode := M;
+            Paddles.Fire := (others => False);
+         end if;
+      end loop;
+   end On_Paddles;
+
    function On_Draw (Self : access Gtk_Widget_Record'Class;
                      Cr   : Cairo_Context) return Boolean
    is
@@ -890,6 +934,10 @@ package body GUI is
       OX : constant Float := Float'Floor ((W - SW * Scale * X_Aspect) / 2.0);
       OY : constant Float := Float'Floor ((H - SH * Scale * Y_Aspect) / 2.0);
    begin
+      Pic_X := OX;
+      Pic_Y := OY;
+      Pic_W := SW * Scale * X_Aspect;
+      Pic_H := SH * Scale * Y_Aspect;
       Set_Source_Rgb (Cr, 0.0, 0.0, 0.0);
       Paint (Cr);
       Translate (Cr, Gdouble (OX), Gdouble (OY));
@@ -1219,7 +1267,7 @@ package body GUI is
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
-      Drive_Group, Std_Group, SID_Group, V20_Group :
+      Drive_Group, Std_Group, SID_Group, V20_Group, Paddle_Group :
         Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -1250,6 +1298,14 @@ package body GUI is
         Settings.Get ("fastload", Machine.Fast_Kernal_Load);
       Audio.Muted := Settings.Get ("mute", False);
       Keyboard.Positional := Settings.Get ("positional", False);
+      if not Paddles_Given then
+         begin
+            Paddles.Mode :=
+              Paddles.Mode_Kind'Value (Settings.Get ("paddles", "OFF"));
+         exception
+            when Constraint_Error => null;
+         end;
+      end if;
       Integer_Scale := Settings.Get ("integerscale", False);
       CRT_Filter := Settings.Get ("crt", False);
       Last_Dir := To_Unbounded_String (Settings.Get ("lastdir", ""));
@@ -1370,6 +1426,14 @@ package body GUI is
                  On_Positional'Access);
       Add_Separator (M_Input);
       Host_Joystick.Scan;
+      Add_Radio (M_Input, "No paddles", Paddle_Group,
+                 Paddle_Items (Paddles.Off), On_Paddles'Access);
+      Add_Radio (M_Input, "Paddles on the mouse (x / y, buttons fire)",
+                 Paddle_Group, Paddle_Items (Paddles.Mouse), On_Paddles'Access);
+      Add_Radio (M_Input, "Paddles on the joystick (left/right, up/down)",
+                 Paddle_Group, Paddle_Items (Paddles.Joystick),
+                 On_Paddles'Access);
+      Add_Separator (M_Input);
       Add_Radio (M_Input, "No game controller", Host_Group, Host_Items (-1),
                  On_Host_Joy'Access);
       for I in 0 .. Host_Joystick.Count - 1 loop
@@ -1389,6 +1453,11 @@ package body GUI is
       Gtk_New (Area);
       Area.Set_Size_Request (384, 272);
       Area.On_Draw (On_Draw'Access);
+      Area.Add_Events (Pointer_Motion_Mask or Button_Press_Mask
+                       or Button_Release_Mask);
+      Area.On_Motion_Notify_Event (On_Area_Motion'Access);
+      Area.On_Button_Press_Event (On_Area_Button'Access);
+      Area.On_Button_Release_Event (On_Area_Button'Access);
       Gtk.Dnd.Dest_Set (Area, Gtk.Dnd.Dest_Default_All,
                         Actions => Gdk.Drag_Contexts.Action_Copy);
       Gtk.Dnd.Dest_Add_Uri_Targets (Area);

@@ -193,8 +193,10 @@ package body SID is
    function Read (Reg : Natural) return Byte is
    begin
       case Reg mod 32 is
-         when 16#19# | 16#1A# =>
-            return 16#FF#;    --  paddles not connected
+         when 16#19# =>
+            return Pot_X;     --  paddles
+         when 16#1A# =>
+            return Pot_Y;
          when 16#1B# =>    --  OSC3: upper 8 bits of voice 3's waveform
             declare
                Any : Boolean;

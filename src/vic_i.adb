@@ -150,8 +150,10 @@ package body VIC_I is
             return Byte ((Line / 2) mod 256);
          when 6 | 7 =>
             return 0;              --  light pen
-         when 8 | 9 =>
-            return 16#FF#;         --  paddles not connected
+         when 8 =>
+            return Pot_X;          --  paddles
+         when 9 =>
+            return Pot_Y;
          when others =>
             return Regs (R);
       end case;

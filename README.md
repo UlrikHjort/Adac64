@@ -116,7 +116,18 @@ either part loads both). They are placed like VICE places them (16K images
 go to their block plus `$A000`, 4K images are mirrored) and the machine is
 reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Not
 there yet on the VIC-20: bank-switching cartridges (Mega-Cart, Final
-Expansion), light pen and paddles, snapshots.
+Expansion), light pen, snapshots.
+
+**Paddles** (VIC-20 and C64; Input menu or `--paddles mouse|joystick`):
+on the mouse, the position over the picture turns the two paddles (left /
+right and up / down; moving right or down lowers the value, as in VICE)
+and the left / right button are their fire buttons; on the joystick
+(keys or a game controller), left / right turn paddle 1, up / down
+paddle 2 and fire is paddle 1's button. The VIC-20 reads them at
+`$9008`/`$9009`; on the C64 they are in the joystick port setting and
+read through the SID at `$D419`/`$D41A` when CIA1 selects that port. While
+paddles are on, the joystick lines carry only the paddle buttons (left =
+paddle 1, right = paddle 2), as with real paddles.
 
 ### Drive 8
 
@@ -455,6 +466,7 @@ Disk images can also be dropped onto the window.
     src/drive1541.*  1541/1571 drive: CPU, VIAs, CIA, WD1770, GCR surface
     src/via.*        6522 VIA       src/iec.ads    serial bus lines
     src/keyboard.*   matrix and host key mapping
+    src/paddles.*    paddles on the mouse or joystick
     src/audio.*      PulseAudio output    src/gui.*  GtkAda front end
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
     src/asm.*        6502 assembler (ACME syntax)

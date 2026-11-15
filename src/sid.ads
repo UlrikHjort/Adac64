@@ -23,6 +23,8 @@ package SID is
    type Sample is range -32768 .. 32767;
    for Sample'Size use 16;
 
+   Pot_X, Pot_Y : Byte := 16#FF#;   --  paddle inputs ($D419 / $D41A)
+
    procedure Reset;
    procedure Write (Reg : Natural; Value : Byte);
    function Read (Reg : Natural) return Byte;
