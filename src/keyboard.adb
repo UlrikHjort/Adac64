@@ -269,9 +269,105 @@ package body Keyboard is
       end case;
    end Map_Key_Plus4;
 
+   --  PET graphics keyboard (row, column) as (Col, R) here
+   function Map_Key_PET (KV : Unsigned_32) return Mapping is
+      function K (Row : Column; Col : Keyboard.Row;
+                  S : Shift_Mode := Force_No_Shift) return Mapping is
+        (Key ((Row, Col), S));
+   begin
+      if KV in 16#20# .. 16#7E# then
+         case Character'Val (KV) is
+            when 'a' | 'A' => return K (4, 0, Natural_Shift);
+            when 'b' | 'B' => return K (6, 2, Natural_Shift);
+            when 'c' | 'C' => return K (6, 1, Natural_Shift);
+            when 'd' | 'D' => return K (4, 1, Natural_Shift);
+            when 'e' | 'E' => return K (2, 1, Natural_Shift);
+            when 'f' | 'F' => return K (5, 1, Natural_Shift);
+            when 'g' | 'G' => return K (4, 2, Natural_Shift);
+            when 'h' | 'H' => return K (5, 2, Natural_Shift);
+            when 'i' | 'I' => return K (3, 3, Natural_Shift);
+            when 'j' | 'J' => return K (4, 3, Natural_Shift);
+            when 'k' | 'K' => return K (5, 3, Natural_Shift);
+            when 'l' | 'L' => return K (4, 4, Natural_Shift);
+            when 'm' | 'M' => return K (6, 3, Natural_Shift);
+            when 'n' | 'N' => return K (7, 2, Natural_Shift);
+            when 'o' | 'O' => return K (2, 4, Natural_Shift);
+            when 'p' | 'P' => return K (3, 4, Natural_Shift);
+            when 'q' | 'Q' => return K (2, 0, Natural_Shift);
+            when 'r' | 'R' => return K (3, 1, Natural_Shift);
+            when 's' | 'S' => return K (5, 0, Natural_Shift);
+            when 't' | 'T' => return K (2, 2, Natural_Shift);
+            when 'u' | 'U' => return K (2, 3, Natural_Shift);
+            when 'v' | 'V' => return K (7, 1, Natural_Shift);
+            when 'w' | 'W' => return K (3, 0, Natural_Shift);
+            when 'x' | 'X' => return K (7, 0, Natural_Shift);
+            when 'y' | 'Y' => return K (3, 2, Natural_Shift);
+            when 'z' | 'Z' => return K (6, 0, Natural_Shift);
+            when '0' => return K (8, 6);
+            when '1' => return K (6, 6);
+            when '2' => return K (7, 6);
+            when '3' => return K (6, 7);
+            when '4' => return K (4, 6);
+            when '5' => return K (5, 6);
+            when '6' => return K (4, 7);
+            when '7' => return K (2, 6);
+            when '8' => return K (3, 6);
+            when '9' => return K (2, 7);
+            when '!' => return K (0, 0);
+            when '"' => return K (1, 0);
+            when '#' => return K (0, 1);
+            when '$' => return K (1, 1);
+            when '%' => return K (0, 2);
+            when ''' => return K (1, 2);
+            when '&' => return K (0, 3);
+            when '\' => return K (1, 3);
+            when '(' => return K (0, 4);
+            when ')' => return K (1, 4);
+            when '^' => return K (2, 5);
+            when '/' => return K (3, 7);
+            when ':' => return K (5, 4);
+            when '*' => return K (5, 7);
+            when ';' => return K (6, 4);
+            when ',' => return K (7, 3);
+            when '?' => return K (7, 4);
+            when '+' => return K (7, 7);
+            when '@' => return K (8, 1);
+            when ']' => return K (8, 2);
+            when '>' => return K (8, 4);
+            when '-' => return K (8, 7);
+            when '[' => return K (9, 1);
+            when '<' => return K (9, 3);
+            when '.' => return K (9, 6);
+            when '=' => return K (9, 7);
+            when ' ' => return K (9, 2, Natural_Shift);
+            when '_' | '`' => return K (0, 5);           --  left arrow
+            when others => return No_Map;
+         end case;
+      end if;
+      case KV is
+         when GDK_Return | GDK_KP_Enter => return K (6, 5, Natural_Shift);
+         when GDK_BackSpace | GDK_Delete => return K (1, 7);
+         when GDK_Insert => return K (1, 7, Force_Shift);
+         when GDK_Home => return K (0, 6);
+         when GDK_End => return K (0, 6, Force_Shift);    --  CLR
+         when GDK_Down => return K (1, 6);
+         when GDK_Up => return K (1, 6, Force_Shift);
+         when GDK_Right => return K (0, 7);
+         when GDK_Left => return K (0, 7, Force_Shift);
+         when GDK_Escape => return K (9, 4, Natural_Shift);   --  STOP
+         when GDK_Tab => return K (9, 0, Natural_Shift);      --  RVS
+         when GDK_Shift_L => return K (8, 0, Natural_Shift);
+         when GDK_Shift_R => return K (8, 5, Natural_Shift);
+         when others => return No_Map;
+      end case;
+   end Map_Key_PET;
+
    function Map_Key (KV : Unsigned_32) return Mapping is
       J : constant Mapping := Joystick_Mapping (KV);
    begin
+      if Layout = PET then
+         return Map_Key_PET (KV);           --  (no joystick port)
+      end if;
       if J.Valid then
          return J;
       end if;
@@ -487,7 +583,14 @@ package body Keyboard is
             end if;
          end if;
       end loop;
-      if Force_S then
+      if Layout = PET then
+         --  shift keys at row 8, columns 0 and 5
+         if Force_S then
+            Matrix (8) := Matrix (8) or 1;
+         elsif Force_NS then
+            Matrix (8) := Matrix (8) and not 16#21#;
+         end if;
+      elsif Force_S then
          Matrix (K_LSHIFT.Col) := Matrix (K_LSHIFT.Col) or
            Shift_Left (1, K_LSHIFT.R);
       elsif Force_NS then

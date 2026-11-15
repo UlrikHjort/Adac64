@@ -252,7 +252,9 @@ package body Screen_Editor is
       end if;
       if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works "
+            Status.Set_Text ("the " & (if Machine.Model = Machine.PET
+                                       then "PET" else "VIC-20")
+                             & " has no VIC-II: this editor works "
                              & "with the C64, C128, C16 and Plus/4");
          end if;
          return;

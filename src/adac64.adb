@@ -30,6 +30,7 @@
 --    --vic20 [3k|8k|16k|24k|35k]  start as a VIC-20 (with RAM expansion)
 --    --80 / --40        C128: 40/80 key down (80 columns) / up
 --    --plus4, --c16     start a Commodore Plus/4 or C16
+--    --pet              start a Commodore PET 4032
 --    --pal-blur         blur the picture sideways like a PAL TV
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
@@ -195,6 +196,9 @@ begin
                C128_Wanted, TED_Wanted : Boolean := False;
             begin
                for K in 1 .. Argument_Count loop
+                  if Argument (K) = "--pet" then
+                     Basic.Load_Override := 16#0401#;
+                  end if;
                   C128_Wanted := C128_Wanted or else Argument (K) = "--c128";
                   TED_Wanted := TED_Wanted or else Argument (K) = "--plus4"
                     or else Argument (K) = "--c16";
@@ -271,6 +275,9 @@ begin
             Model_Given := True;
          elsif A = "--c16" then
             Model := Machine.C16;
+            Model_Given := True;
+         elsif A = "--pet" then
+            Model := Machine.PET;
             Model_Given := True;
          elsif A = "--vic20" then
             Model := Machine.VIC20;

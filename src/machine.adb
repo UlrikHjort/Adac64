@@ -44,12 +44,14 @@ with Machine.Core; use Machine.Core;
 with Machine.C64_System;
 with Machine.VIC20_System;
 with Machine.Plus4_System;
+with Machine.PET_System;
 
 package body Machine is
 
    package C64S renames Machine.C64_System;
    package V20S renames Machine.VIC20_System;
    package P4S renames Machine.Plus4_System;
+   package PETS renames Machine.PET_System;
 
    function Is_TED return Boolean is (Current_Model in Plus4 | C16);
 
@@ -61,9 +63,11 @@ package body Machine is
    function ZP_FNADR return Word is (if Is_TED then 16#AF# else 16#BB#);
    function ZP_EAL return Word is (if Is_TED then 16#9D# else 16#AE#);
    function Key_Count_Addr return Word is
-     (if Is_TED then 16#EF# elsif C64_Mode then 16#C6# else 16#D0#);
+     (if Is_TED then 16#EF# elsif Current_Model = PET then 16#9E#
+      elsif C64_Mode then 16#C6# else 16#D0#);
    function Key_Buffer_Addr return Word is
-     (if Is_TED then 16#0527# elsif C64_Mode then 16#0277# else 16#034A#);
+     (if Is_TED then 16#0527# elsif Current_Model = PET then 16#026F#
+      elsif C64_Mode then 16#0277# else 16#034A#);
 
    --  Typing / autostart
    Type_Queue : Unbounded_String;
@@ -155,6 +159,9 @@ package body Machine is
          when VIC20 => V20S.Attach_Cartridge (Path, Ok);
          when C64 | C128 => C64S.Attach_Cartridge (Path, Ok);
          when Plus4 | C16 => P4S.Attach_Cartridge (Path, Ok);
+         when PET =>
+            Ok := False;
+            Err := To_Unbounded_String ("the PET has no cartridge port");
       end case;
    end Attach_Cartridge;
 
@@ -170,7 +177,8 @@ package body Machine is
      (case Current_Model is
          when VIC20 => V20S.Cartridge_Name,
          when C64 | C128 => C64S.Cartridge_Name,
-         when Plus4 | C16 => P4S.Cartridge_Name);
+         when Plus4 | C16 => P4S.Cartridge_Name,
+         when PET => "");
 
    procedure Detach is
    begin
@@ -247,6 +255,7 @@ package body Machine is
          when VIC20 => V20S.Load_ROMs (ROM_Dir, Ok);
          when C64 | C128 => C64S.Load_ROMs (ROM_Dir, Ok);
          when Plus4 | C16 => P4S.Load_ROMs (ROM_Dir, Ok);
+         when PET => PETS.Load_ROMs (ROM_Dir, Ok);
       end case;
       Mem (ROM_Empty .. ROM_Empty + 255) := (others => 16#FF#);
       Set_Video_Standard (Standard);   --  timing of the model's video chip
@@ -260,6 +269,7 @@ package body Machine is
    function Basic_Start return Word is
      (case Current_Model is
         when VIC20 | Plus4 | C16 => Make_Word (Peek (16#2B#), Peek (16#2C#)),
+        when PET => Make_Word (Peek (16#28#), Peek (16#29#)),
         when others =>
           (if C64_Mode then 16#0801# else 16#1C01#));
    function Error_Message return String is (To_String (Err));
@@ -273,6 +283,7 @@ package body Machine is
          when VIC20 => V20S.Set_Standard (V);
          when C64 | C128 => C64S.Set_Standard (V);
          when Plus4 | C16 => P4S.Set_Standard (V);
+         when PET => PETS.Set_Standard (V);
       end case;
    end Set_Video_Standard;
 
@@ -280,6 +291,7 @@ package body Machine is
    function Frame_Rate return Float is
      (if Current_Model = VIC20 then V20S.Frame_Rate
       elsif Is_TED then P4S.Frame_Rate
+      elsif Current_Model = PET then PETS.Frame_Rate
       elsif Current_Standard = PAL then 985_248.0 / 19_656.0
       else 1_022_727.0 / 17_095.0);
    function Get_PC return Word is (CPU.PC);
@@ -294,12 +306,15 @@ package body Machine is
          Color_RAM := (others => 0);
       end if;
       C64_Mode := Current_Model /= C128;
-      Has_CPU_Port := Current_Model /= VIC20;
-      Keyboard.Layout := (if Is_TED then Keyboard.Plus4 else Keyboard.C64);
+      Has_CPU_Port := Current_Model in C64 | C128 | Plus4 | C16;
+      Keyboard.Layout := (if Is_TED then Keyboard.Plus4
+                          elsif Current_Model = PET then Keyboard.PET
+                          else Keyboard.C64);
       case Current_Model is
          when VIC20 => V20S.Reset (Hard);
          when C64 | C128 => C64S.Reset (Hard);
          when Plus4 | C16 => P4S.Reset (Hard);
+         when PET => PETS.Reset (Hard);
       end case;
       Keyboard.Release_All;
       Rebuild_Map;
@@ -330,6 +345,8 @@ package body Machine is
          return V20S.IO_Peek (Addr);   --  cartridge areas (Final Expansion)
       elsif Is_TED then
          return P4S.IO_Peek (Addr);
+      elsif Current_Model = PET and then Hi (Addr) = 16#E8# then
+         return PETS.IO_Peek (Addr);
       else
          return 16#FF#;
       end if;
@@ -584,6 +601,7 @@ package body Machine is
       function VIC_Screen (I : Natural) return Byte is
         (if Current_Model = VIC20 then V20S.Screen_Byte (I)
          elsif Is_TED then P4S.Screen_Byte (I)
+         elsif Current_Model = PET then PETS.Screen_Byte (I)
          else C64S.Screen_Byte (I));
       function VDC_Screen (I : Natural) return Byte is
         (C64S.VDC_Screen_Byte (I));
@@ -653,7 +671,16 @@ package body Machine is
          function Addr return String is (Natural'Image (Natural (LA)));
       begin
          Auto_Path := To_Unbounded_String (Path);
-         if Current_Model in VIC20 | Plus4 | C16 then
+         if Current_Model = PET then
+            --  LOAD puts a file where it says (no ",1" on the PET)
+            Cmd := To_Unbounded_String
+              ("LOAD" & Q & ",8" & NL &
+               (if LA in 16#0401# | 0 then "RUN" else "SYS" & Addr) & NL);
+            Auto_Command := Cmd;
+            Auto := Wait_Ready;
+            Auto_Frames := 0;
+            return;
+         elsif Current_Model in VIC20 | Plus4 | C16 then
             if LA in 16#0401# | 16#1001# | 16#1201# or else LA = 0 then
                Cmd := To_Unbounded_String ("LOAD" & Q & ",8" & NL & "RUN" & NL);
             elsif LA = 16#A000# and then Current_Model = VIC20 then
@@ -867,6 +894,7 @@ package body Machine is
          when VIC20 => V20S.Save_State (S);
          when C64 | C128 => C64S.Save_State (S);
          when Plus4 | C16 => P4S.Save_State (S);
+         when PET => PETS.Save_State (S);
       end case;
       Close (F);
       Ok := True;
@@ -896,8 +924,10 @@ package body Machine is
          return;
       end if;
       Model_Type'Read (S, Current_Model);
-      Has_CPU_Port := Current_Model /= VIC20;
-      Keyboard.Layout := (if Is_TED then Keyboard.Plus4 else Keyboard.C64);
+      Has_CPU_Port := Current_Model in C64 | C128 | Plus4 | C16;
+      Keyboard.Layout := (if Is_TED then Keyboard.Plus4
+                          elsif Current_Model = PET then Keyboard.PET
+                          else Keyboard.C64);
       declare
          V : Video_Standard;
       begin
@@ -939,6 +969,7 @@ package body Machine is
          when VIC20 => V20S.Load_State (S);
          when C64 | C128 => C64S.Load_State (S);
          when Plus4 | C16 => P4S.Load_State (S);
+         when PET => PETS.Load_State (S);
       end case;
       Close (F);
       IEC.Drive_Present := Drive_On;
@@ -1149,7 +1180,8 @@ package body Machine is
      (case Current_Model is
          when VIC20 => V20S.IO_Peek (Addr),
          when C64 | C128 => C64S.IO_Peek (Addr),
-         when Plus4 | C16 => P4S.IO_Peek (Addr));
+         when Plus4 | C16 => P4S.IO_Peek (Addr),
+         when PET => PETS.IO_Peek (Addr));
 
    function Monitor_Peek (Addr : Word; Drive : Boolean := False) return Byte
    is
@@ -1191,7 +1223,8 @@ package body Machine is
         (case Current_Model is
             when VIC20 => V20S.Beam_Text,
             when C64 | C128 => C64S.Beam_Text,
-            when Plus4 | C16 => P4S.Beam_Text) &
+            when Plus4 | C16 => P4S.Beam_Text,
+            when PET => PETS.Beam_Text) &
         (if Has_CPU_Port then "  $01=$" & Disasm.Hex2 (Peek (1))
          else "");
    end Register_Text;
@@ -1212,13 +1245,15 @@ package body Machine is
      (case Current_Model is
          when VIC20 => V20S.Frame_Done,
          when C64 | C128 => C64S.Frame_Done,
-         when Plus4 | C16 => P4S.Frame_Done);
+         when Plus4 | C16 => P4S.Frame_Done,
+         when PET => PETS.Frame_Done);
 
    procedure Clear_Frame_Flag is
    begin
       V20S.Clear_Frame;
       C64S.Clear_Frame;
       P4S.Clear_Frame;
+      PETS.Clear_Frame;
    end Clear_Frame_Flag;
 
    procedure End_Of_Frame is
@@ -1227,6 +1262,7 @@ package body Machine is
          when VIC20 => V20S.End_Of_Frame;
          when C64 | C128 => C64S.End_Of_Frame;
          when Plus4 | C16 => P4S.End_Of_Frame;
+         when PET => PETS.End_Of_Frame;
       end case;
       Feed_Keyboard;
       Keyboard.Tick_Typing;
@@ -1268,6 +1304,7 @@ package body Machine is
             when VIC20 => V20S.Interrupt_Lines (IRQ_Now, NMI_Now);
             when C64 | C128 => C64S.Interrupt_Lines (IRQ_Now, NMI_Now);
             when Plus4 | C16 => P4S.Interrupt_Lines (IRQ_Now, NMI_Now);
+            when PET => PETS.Interrupt_Lines (IRQ_Now, NMI_Now);
          end case;
          CPU.IRQ_Line := IRQ_Now;
          if NMI_Now and then not NMI_Prev then

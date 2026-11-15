@@ -35,8 +35,9 @@ with Drive1541;
 
 package Machine is
 
-   type Model_Type is (C64, C128, VIC20, Plus4, C16);
-   --  Plus4: 64K and the 3-plus-1 ROMs; C16: the same machine with 16K
+   type Model_Type is (C64, C128, VIC20, Plus4, C16, PET);
+   --  Plus4: 64K and the 3-plus-1 ROMs; C16: the same machine with 16K;
+   --  PET: a PET 4032 (BASIC 4, 40 columns), drive 8 on the IEEE-488 bus
 
    --  VIC-20 RAM expansion (takes effect at the next reset):
    --    +3K  block 0 ($0400-$0FFF)       BASIC at $0401, screen $1E00

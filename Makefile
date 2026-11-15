@@ -21,6 +21,7 @@ tests: all
 	sh tests/disk_test.sh
 	sh tests/vic20_test.sh
 	sh tests/plus4_test.sh
+	sh tests/pet_test.sh
 	sh tests/paddle_test.sh
 	@if [ -f $(KLAUS) ]; then bin/cpu_test $(KLAUS); else \
 	  echo "Skipping CPU test: put Klaus Dormann's 6502_functional_test.bin in tests/"; fi

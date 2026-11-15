@@ -115,7 +115,8 @@ package body GUI is
    Item_Pause   : Gtk_Check_Menu_Item;
    Item_TDE     : Gtk_Check_Menu_Item;
    Item_FastLd  : Gtk_Check_Menu_Item;
-   Item_C64, Item_C128, Item_VIC20, Item_Plus4, Item_C16 : Gtk_Radio_Menu_Item;
+   Item_C64, Item_C128, Item_VIC20, Item_Plus4, Item_C16, Item_PET :
+     Gtk_Radio_Menu_Item;
    V20_Items : array (Machine.VIC20_Memory) of Gtk_Radio_Menu_Item;
    Paddle_Items : array (Paddles.Mode_Kind) of Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
@@ -160,7 +161,8 @@ package body GUI is
                       else "C128"),
         when VIC20 => "VIC-20" & V20_Mem_Name,
         when Plus4 => "Plus/4",
-        when C16 => "C16");
+        when C16 => "C16",
+        when PET => "PET 4032");
 
    function Short (S : String) return String is
      (if S'Length > 24 then S (S'First .. S'First + 21) & ".." else S);
@@ -220,6 +222,7 @@ package body GUI is
          when VIC20 => Item_VIC20.Set_Active (True);
          when Plus4 => Item_Plus4.Set_Active (True);
          when C16 => Item_C16.Set_Active (True);
+         when PET => Item_PET.Set_Active (True);
       end case;
       V20_Items (Machine.VIC20_Memory_Config).Set_Active (True);
       if Paddle_Items (Paddles.Mode) /= null then
@@ -666,6 +669,7 @@ package body GUI is
       Settings.Set ("model", (case Machine.Model is
                                  when C128 => "c128", when VIC20 => "vic20",
                                  when Plus4 => "plus4", when C16 => "c16",
+                                 when PET => "pet",
                                  when C64 => "c64"));
       Settings.Set ("vic20mem",
                     Machine.VIC20_Memory'Image (Machine.VIC20_Memory_Config));
@@ -781,6 +785,10 @@ package body GUI is
         and then Machine.Model /= C16
       then
          Start_Machine (C16);
+      elsif Gtk_Radio_Menu_Item (Item) = Item_PET
+        and then Machine.Model /= PET
+      then
+         Start_Machine (PET);
       end if;
       Sync_Menu;
    end On_Model;
@@ -1356,6 +1364,7 @@ package body GUI is
                          elsif Settings.Get ("model", "c64") = "vic20" then VIC20
                          elsif Settings.Get ("model", "c64") = "plus4" then Plus4
                          elsif Settings.Get ("model", "c64") = "c16" then C16
+                         elsif Settings.Get ("model", "c64") = "pet" then PET
                          else C64);
       end if;
       begin
@@ -1447,6 +1456,8 @@ package body GUI is
       Add_Radio (M_Machine, "Commodore Plus/4", Model_Group, Item_Plus4,
                  On_Model'Access);
       Add_Radio (M_Machine, "Commodore 16", Model_Group, Item_C16,
+                 On_Model'Access);
+      Add_Radio (M_Machine, "Commodore PET 4032", Model_Group, Item_PET,
                  On_Model'Access);
       for M in Machine.VIC20_Memory loop
          Add_Radio (M_Machine,

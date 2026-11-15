@@ -49,7 +49,9 @@ package Keyboard is
 
    Restore_Down : Boolean := False;
 
-   type Layout_Kind is (C64, Plus4);
+   type Layout_Kind is (C64, Plus4, PET);
+   --  PET: the graphics keyboard (10 rows of 8; Matrix (row) holds a row's
+   --  keys; digits and most symbols have keys of their own)
    Layout : Layout_Kind := C64;
    --  Plus4: the C16 / Plus/4 matrix (the keys outside the letters and
    --  digits sit elsewhere; F1-F3, HELP, ESC and four cursor keys)

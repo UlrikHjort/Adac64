@@ -32,6 +32,7 @@ use type Media.Media_Kind;
 with Machine.C64_System;
 with Machine.VIC20_System;
 with Machine.Plus4_System;
+with Machine.PET_System;
 
 package body Machine.Core is
 
@@ -96,6 +97,7 @@ package body Machine.Core is
          when VIC20 => VIC20_System.Rebuild_Map;
          when C64 | C128 => C64_System.Rebuild_Map;
          when Plus4 | C16 => Plus4_System.Rebuild_Map;
+         when PET => PET_System.Rebuild_Map;
       end case;
    end Rebuild_Map;
 
@@ -106,6 +108,7 @@ package body Machine.Core is
          when VIC20 => VIC20_System.Clock (N);
          when C64 | C128 => C64_System.Clock (N);
          when Plus4 | C16 => Plus4_System.Clock (N);
+         when PET => PET_System.Clock (N);
       end case;
    end Clock_Devices;
 
@@ -116,6 +119,7 @@ package body Machine.Core is
          when VIC20 => return VIC20_System.IO_Read (Addr);
          when C64 | C128 => return C64_System.IO_Read (Addr);
          when Plus4 | C16 => return Plus4_System.IO_Read (Addr);
+         when PET => return PET_System.IO_Read (Addr);
       end case;
    end IO_Read;
 
@@ -126,6 +130,7 @@ package body Machine.Core is
          when VIC20 => VIC20_System.IO_Write (Addr, Value);
          when C64 | C128 => C64_System.IO_Write (Addr, Value);
          when Plus4 | C16 => Plus4_System.IO_Write (Addr, Value);
+         when PET => PET_System.IO_Write (Addr, Value);
       end case;
    end IO_Write;
 

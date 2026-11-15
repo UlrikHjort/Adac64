@@ -148,8 +148,10 @@ package body Sprite_Editor is
    begin
       if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the " & (if Machine.Model = Machine.VIC20
-                                       then "VIC-20" else "C16 / Plus/4")
+            Status.Set_Text ("the " & (case Machine.Model is
+                                       when Machine.VIC20 => "VIC-20",
+                                       when Machine.PET => "PET",
+                                       when others => "C16 / Plus/4")
                              & " has no VIC-II: this editor works with "
                              & "the C64 and C128");
          end if;

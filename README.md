@@ -1,6 +1,6 @@
 # AdaC64
 
-A Commodore 64, Commodore 128, VIC-20, C16 and Plus/4 emulator written in
+A Commodore 64, Commodore 128, VIC-20, C16, Plus/4 and PET 4032 emulator written in
 Ada 2012 with GtkAda, with Forge, an assembler IDE, debugger and graphics editors.
 The Commodore ROMs are not included; see [ROMs](#roms) for which files are
 needed and where they go.
@@ -20,6 +20,7 @@ leave some out). The files are found by these names:
 | C128 | `<roms>/C128/` | `kernal-318020-05.bin`, `basiclo-318018-04.bin`, `basichi-318019-04.bin`, `chargen-390059-01.bin`, `basic64-901226-01.bin`, `kernal64-901227-03.bin` |
 | VIC-20 | `roms/vic20/` (or `<roms>/VIC20/` with VICE names) | `basic.901486-01.bin`, `characters.901460-03.bin`, `kernal.901486-07.bin` (PAL), `kernal.901486-06.bin` (NTSC) |
 | C16 / Plus/4 | `roms/plus4/` (or `<roms>/PLUS4/`) | `basic-318006-01.bin`, `kernal-318004-05.bin` (PAL), `kernal-318005-05.bin` (NTSC); the Plus/4's 3-plus-1 programs: `3plus1-317053-01.bin`, `3plus1-317054-01.bin` (optional). The zimmers.net names (`basic.318006-01.bin`, `3plus1low.317053-01.bin`, ...) work too |
+| PET 4032 | `roms/pet/` (or `<roms>/PET/`) | `basic-4.901465-23-20-21.bin`, `kernal-4.901465-22.bin`, `characters-2.901447-10.bin`, `edit-4-40-n-50Hz.901498-01.bin` (PAL), `edit-4-40-n-60Hz.901499-01.bin` (NTSC) |
 | 1541 | `roms/drives/` or `<roms>/DRIVES/` | `1541-II.251968-03.bin`, or `dos1541.bin` = `1541-c000.325302-01.bin` + `1541-e000.901229-05.bin` |
 | 1571 | `roms/drives/` | `1571-rom.310654-05.bin` |
 | 1581 | `roms/drives/` or `<roms>/DRIVES/` | `1581-rom.318045-02.bin` (VICE: `dos1581-318045-02.bin`) |
@@ -44,6 +45,11 @@ check that you have the expected versions (`sha1sum FILE`):
     a3d9e5be091b98de39a046ab167fb7632d053682  kernal-318005-05.bin
     3b69f6e7cb4c18bb08e203fb18b7dabfa853390f  3plus1-317053-01.bin
     0ad7ac2db7da692d972e586ca0dfd747d82c7693  3plus1-317054-01.bin
+    d70bec479e1e3a0d0908a4897066e9959bbc11c8  basic-4.901465-23-20-21.bin
+    96a0fa56e0c937da92971d9c99d504e44e898806  kernal-4.901465-22.bin
+    0157a2d55b7ac4eaeb38475889ebeea52e2593db  characters-2.901447-10.bin
+    05af284c914d53a52987b5f602466de75765f650  edit-4-40-n-50Hz.901498-01.bin
+    8cbf086c1ce4dfb2a2fe24c47476dfb878493dee  edit-4-40-n-60Hz.901499-01.bin
     d3b78c3dbac55f5199f33f3fe0036439811f7fb3  1541-II.251968-03.bin
     8e0547430135ba462525c224e76356bd3d430f11  1541-c000.325302-01.bin
     f5d60777440829e46dc91285e662ba072acd2d8b  1541-e000.901229-05.bin
@@ -191,6 +197,28 @@ them at reset. Plus/4 demos and games from the scene archives (disk, tape
 and single files) run as in VICE.
 
 Not there yet: the 1551 drive, the ACIA (RS-232) and saving to tape.
+
+### PET 4032
+
+Machine → Commodore PET 4032 (or `--pet`): BASIC 4.0 with 32K RAM, the
+40-column screen at `$8000` in green, the 6545 CRTC, the two 6520 PIAs
+(keyboard, retrace interrupt, IEEE-488 lines), the 6522 VIA (character
+set switch and the CB2 sound used for the bell and by games) and the
+graphics keyboard. Drive 8 sits on the IEEE-488 bus and is emulated at
+the bus level: it answers the handshake and serves LOAD (programs and the
+`$` directory) from the attached disk image or the current directory and
+SAVE into the current directory, so `LOAD"NAME",8`, `DLOAD"NAME"`,
+`DIRECTORY` and autostart (LOAD + RUN) work. `--pet --basic file.bas`
+tokenizes a program at `$0401`. Keys: Esc = STOP, Tab = RVS, Home =
+HOME, End = CLR, `_` = ←.
+
+The boot screen and the bell's pitch were compared with VICE's xpet and
+are identical; `tests/pet_test.sh` checks boot, every key, loading and
+saving through the drive, and snapshots.
+
+Not there yet: the 80-column 8032, the PET's tape decks, BASIC 4's disk
+commands in the tokenizer and the Forge graphics editors (the PET has no
+VIC-II or TED).
 
 ### Drive 8
 
@@ -558,7 +586,9 @@ Disk images can also be dropped onto the window.
     src/machine-c64_system.*   C64 / C128: maps, I/O, MMU, Z80, REU, .crt
     src/machine-vic20_system.* VIC-20: map, VIAs, RAM expansion, cartridges
     src/machine-plus4_system.* C16 / Plus/4: banking, I/O, CPU port, keyboard
+    src/machine-pet_system.*   PET 4032: map, PIAs, VIA, CRTC, screen
     src/ted.*        TED: video, timers, interrupts, sound
+    src/pia.*        6520 PIA       src/ieee_drive.*  PET IEEE-488 drive
     src/crt.*        CRT cartridge files
     src/reu.*        RAM Expansion Unit
     src/tape.*       Datasette / TAP images
