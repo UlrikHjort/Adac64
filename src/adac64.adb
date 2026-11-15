@@ -33,6 +33,7 @@ with Ada.Command_Line; use Ada.Command_Line;
 with Ada.Text_IO; use Ada.Text_IO;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Fixed;
+with Ada.Characters.Handling;
 with Types;
 with Machine;
 with Blit;
@@ -77,6 +78,16 @@ procedure AdaC64 is
    I        : Positive := 1;
    Ok       : Boolean;
 
+   --  Files the studio opens itself (sources, sprites, charsets)
+   function Studio_File_Type (Path : String) return Boolean is
+      L : constant String := Ada.Characters.Handling.To_Lower (Path);
+      function Ends (E : String) return Boolean is
+        (L'Length > E'Length and then L (L'Last - E'Length + 1 .. L'Last) = E);
+   begin
+      return Asm.Is_Source (Path) or else Basic.Is_Source (Path)
+        or else Ends (".spr") or else Ends (".chr") or else Ends (".64c");
+   end Studio_File_Type;
+
    function Unescape (S : String) return String is
       R : Unbounded_String;
       J : Positive := S'First;
@@ -93,6 +104,10 @@ procedure AdaC64 is
       return To_String (R);
    end Unescape;
 begin
+   --  Started as adac64-studio: the studio is the main window
+   if Ada.Strings.Fixed.Index (Command_Name, "studio") > 0 then
+      GUI.Open_Studio := True;
+   end if;
    while I <= Argument_Count loop
       declare
          A : constant String := Argument (I);
@@ -149,13 +164,7 @@ begin
             return;
          elsif A = "--studio" then
             GUI.Open_Studio := True;
-            if I < Argument_Count and then
-              (Asm.Is_Source (Argument (I + 1))
-               or else Basic.Is_Source (Argument (I + 1))
-               or else (Argument (I + 1)'Length > 4
-                        and then Argument (I + 1)
-                          (Argument (I + 1)'Last - 3 .. Argument (I + 1)'Last)
-                          = ".spr"))
+            if I < Argument_Count and then Studio_File_Type (Argument (I + 1))
             then
                I := I + 1;
                GUI.Studio_File := To_Unbounded_String (Argument (I));
@@ -270,8 +279,7 @@ begin
    end loop;
 
    if Length (File) > 0 and then GUI.Open_Studio
-     and then (Asm.Is_Source (To_String (File))
-               or else Basic.Is_Source (To_String (File)))
+     and then Studio_File_Type (To_String (File))
    then
       GUI.Studio_File := File;
       File := Null_Unbounded_String;

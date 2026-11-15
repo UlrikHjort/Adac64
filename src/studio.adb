@@ -53,6 +53,7 @@ with Disasm;
 with Settings;
 with Source_View;
 with Sprite_Editor;
+with Charset_Editor;
 use type Source_View.Language;
 with Interfaces; use Interfaces;
 
@@ -366,7 +367,8 @@ package body Studio is
          for P of GNAT.Strings.String_List'
            (new String'("*.asm"), new String'("*.a"), new String'("*.s"),
             new String'("*.a65"), new String'("*.inc"), new String'("*.src"),
-            new String'("*.bas"), new String'("*.spr"))
+            new String'("*.bas"), new String'("*.spr"), new String'("*.chr"),
+            new String'("*.64c"))
          loop
             Filter_Src.Add_Pattern (P.all);
          end loop;
@@ -490,13 +492,20 @@ package body Studio is
      "border  = $d020" & ASCII.LF &
      "screen  = $0400" & ASCII.LF &
      ASCII.LF &
+     "; A '-' or '+' in the label column is an anonymous label: 'bne -'" &
+     ASCII.LF &
+     "; jumps back to the nearest '-' above, 'beq +' forward to the next" &
+     ASCII.LF &
+     "; '+' below (use -- / ++ for a second, outer level)." & ASCII.LF &
+     ASCII.LF &
      "start   ldx #0" & ASCII.LF &
-     "-       lda message,x" & ASCII.LF &
-     "        beq +" & ASCII.LF &
+     "-       lda message,x       ; next character" & ASCII.LF &
+     "        beq +               ; 0 = end of text: leave the loop" &
+     ASCII.LF &
      "        sta screen,x" & ASCII.LF &
      "        inx" & ASCII.LF &
-     "        bne -" & ASCII.LF &
-     "+" & ASCII.LF &
+     "        bne -               ; back to the '-' above" & ASCII.LF &
+     "+                           ; 'beq +' lands here" & ASCII.LF &
      "loop    inc border" & ASCII.LF &
      "        jmp loop" & ASCII.LF &
      ASCII.LF &
@@ -932,12 +941,36 @@ package body Studio is
    --  Actions
    ---------------------------------------------------------------------
 
+   function Unsaved_Ok return Boolean is
+      Names : Unbounded_String;
+   begin
+      for I in Tabs'Range loop
+         if Tabs (I).Used and then Tabs (I).Buffer.Get_Modified then
+            Append (Names, (if Length (Names) > 0 then ", " else "") &
+                      Base_Name (To_String (Tabs (I).Path)));
+         end if;
+      end loop;
+      return Length (Names) = 0 or else Confirm_Discard (To_String (Names));
+   end Unsaved_Ok;
+
+   procedure Close_Studio is
+   begin
+      Save_State;
+      if Quit_App /= null then
+         if Unsaved_Ok then
+            Quit_App.all;
+         end if;
+      else
+         Win.Hide;
+      end if;
+   end Close_Studio;
+
    type Action is
      (A_New, A_New_Basic, A_Import_PRG, A_Fetch_Basic, A_Open, A_Save, A_Save_As, A_Close_Tab, A_Set_Main,
       A_Undo, A_Redo, A_Close,
       A_Build, A_Run, A_Rebuild_Run, A_Pause, A_Step_Into, A_Step_Over,
       A_Step_Out, A_Run_To_Cursor, A_Toggle_BP, A_Clear_BPs, A_Reset,
-      A_Emulator, A_Sprites, A_Help);
+      A_Emulator, A_Sprites, A_Charset, A_Help);
 
    procedure Do_Action (A : Action) is
       T : constant Natural := Current_Tab;
@@ -988,6 +1021,8 @@ package body Studio is
                if P /= "" then
                   if Sprite_Editor.Is_Sprite_File (P) then
                      Sprite_Editor.Open (Win, P);
+                  elsif Charset_Editor.Is_Charset_File (P) then
+                     Charset_Editor.Open (Win, P);
                   else
                      Dummy := Open_Path (P) > 0;
                   end if;
@@ -1019,8 +1054,7 @@ package body Studio is
                Source_View.Redo (Tabs (T).Buffer);
             end if;
          when A_Close =>
-            Save_State;
-            Win.Hide;
+            Close_Studio;
          when A_Build =>
             Dummy := Build;
          when A_Run =>
@@ -1101,6 +1135,8 @@ package body Studio is
             end if;
          when A_Sprites =>
             Sprite_Editor.Open (Win);
+         when A_Charset =>
+            Charset_Editor.Open (Win);
          when A_Help =>
             Print ("F5 build & run / continue   Ctrl+F5 rebuild & run   " &
                    "F6 pause   F7 build");
@@ -1236,8 +1272,7 @@ package body Studio is
                        Event : Gdk.Event.Gdk_Event) return Boolean is
       pragma Unreferenced (Self, Event);
    begin
-      Save_State;
-      Win.Hide;
+      Close_Studio;
       return True;    --  keep the window (and the open files) for later
    end On_Delete;
 
@@ -1397,6 +1432,7 @@ package body Studio is
       Item (M, "Show _emulator", A_Emulator, GDK_F12);
       M := Menu ("_Tools");
       Item (M, "_Sprite editor", A_Sprites, GDK_LC_e, Control_Mask);
+      Item (M, "_Charset editor", A_Charset, GDK_LC_k, Control_Mask);
       M := Menu ("_Help");
       Item (M, "_Keys and syntax", A_Help, GDK_F1);
 
@@ -1542,6 +1578,8 @@ package body Studio is
          begin
             if Sprite_Editor.Is_Sprite_File (Full) then
                Sprite_Editor.Open (Win, Full);
+            elsif Charset_Editor.Is_Charset_File (Full) then
+               Charset_Editor.Open (Win, Full);
             elsif Ada.Directories.Exists (Full) then
                Dummy := Open_Path (Full);
                Main_File := To_Unbounded_String (Full);

@@ -42,6 +42,11 @@ package Machine is
    function Peek (Addr : Word) return Byte;     --  CPU view, no side effects
    procedure Poke (Addr : Word; Value : Byte);  --  RAM bank 0
    function RAM_Peek (Addr : Word) return Byte; --  RAM bank 0 (under ROM/IO)
+   function VIC_Peek (Addr : Word) return Byte;
+   --  What the VIC-II sees at Addr ($0000-$3FFF) in its current bank
+   --  (character ROM at $1000-$1FFF in banks 0 and 2).
+   function VIC_Bank_Address return Word;          --  $0000/$4000/$8000/$C000
+   function Char_ROM_Peek (Offset : Natural) return Byte;   --  0 .. 4095
    function IO_Peek (Addr : Word) return Byte;
    --  VIC-II / colour RAM / CIA register at $D000-$DFFF, whatever is
    --  banked in for the CPU (no side effects).

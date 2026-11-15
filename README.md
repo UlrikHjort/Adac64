@@ -11,7 +11,7 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
     bin/adac64 --c128     # C128, 40 columns
     bin/adac64 --c128 --80
     bin/adac64 game.d64   # autostart (also .t64 / .prg / .asm / .bas)
-    bin/adac64 --studio   # assembler IDE and debugger
+    bin/adac64-studio     # assembler IDE and debugger (with the emulator)
     make tests            # keyboard, CPU and debugger tests
 
 Autostart types what a user would: `LOAD"name",8,1` + `RUN` on the C64, and
@@ -146,8 +146,10 @@ up when a breakpoint is hit. Numbers are hex (`$` optional):
 
 ## Studio: assembler and debugger
 
-`bin/adac64 --studio [file.asm]` (or Machine → Studio) opens an IDE next to
-the emulator: a 6502 editor with syntax highlighting (GtkSourceView), an
+`bin/adac64-studio [file]` starts the studio (`bin/adac64 --studio` does the
+same): an IDE as the main window, with the emulator in its own window as
+the machine your programs run on (F12 brings it up; closing the studio
+quits). `bin/adac64` alone is just the emulator. The studio is a 6502 editor with syntax highlighting (GtkSourceView), an
 assembler, and a source-level debugger working on the running machine.
 
 | Key | | Key | |
@@ -239,6 +241,26 @@ running program (any VIC bank) into the set, with their colours.
 byte), so `!binary "ship.spr"` includes them directly; *Export .asm* writes
 ACME source with one `!byte %...###...` line per row and a label per sprite.
 
+### Charset editor
+
+Studio → Tools → Charset editor (Ctrl+K), or open a `.chr` / `.64c` file.
+It starts from the C64 character ROM (*ROM* / *ROM lower* reload the upper
+or lower case set). Click a character in the set (or move with the cursor
+keys) and draw it in the 8 x 8 grid like a sprite; pens are background,
+character colour, `$D022` and `$D023`; M switches multicolour (double-wide
+pixels, character colours 0-7). Clear, invert, flip, rotate, shift,
+copy/paste and undo work on the current character. The preview renders
+your own text and the alphabet with the charset, plus the character tiled
+to see how it joins up.
+
+*Show in emulator* copies the charset to `$3000` and points the VIC at it,
+so the text screen at READY shows it; with *Live in emulator* every stroke
+appears on the C64 screen immediately. *Grab from emulator* takes the
+charset the running program uses (ROM or RAM, any VIC bank) together with
+its multicolour mode and colours. `.chr` files are the raw 2048 bytes
+(`!binary "font.chr"` at a 2 KB boundary); *Export .asm* writes one `!byte`
+line per character.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -284,6 +306,7 @@ Disk images can also be dropped onto the window.
     src/basic.*      BASIC V2 / 7.0 tokenizer and lister
     src/studio.*     studio window    src/source_view.*  GtkSourceView binding
     src/sprite_*     sprite editor (data model / window)
+    src/charset_*    charset editor (data model / window)
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
     tests/           CPU, keyboard, debugger, sprite and BASIC tests,
                      mkd64.py image builder

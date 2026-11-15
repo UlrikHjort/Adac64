@@ -23,6 +23,9 @@ package Studio is
 
    type Proc is access procedure;
    Refresh_Screen : Proc := null;   --  redraw the emulator window
+   Quit_App : Proc := null;
+   --  Set when the studio is the main window (adac64-studio): closing the
+   --  studio then quits the program instead of hiding it.
 
    procedure Save_State;
    --  Remember the open files in the settings.

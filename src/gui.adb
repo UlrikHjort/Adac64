@@ -427,12 +427,6 @@ package body GUI is
       Area.Queue_Draw;
    end Refresh_Screen;
 
-   procedure On_Studio (Item : access Gtk_Menu_Item_Record'Class) is
-      pragma Unreferenced (Item);
-   begin
-      Studio.Open (Win);
-   end On_Studio;
-
    procedure On_Monitor (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
    begin
@@ -968,6 +962,23 @@ package body GUI is
       Gtk.Main.Main_Quit;
    end On_Destroy;
 
+   --  In the studio the emulator window only hides; the studio quits
+   function On_Win_Delete (Self : access Gtk_Widget_Record'Class;
+                           Event : Gdk_Event) return Boolean is
+      pragma Unreferenced (Self, Event);
+   begin
+      if Open_Studio then
+         Win.Hide;
+         return True;
+      end if;
+      return False;
+   end On_Win_Delete;
+
+   procedure Quit_App is
+   begin
+      Win.Destroy;
+   end Quit_App;
+
    ---------------------------------------------------------------------
    --  Emulation pacing
    ---------------------------------------------------------------------
@@ -1178,6 +1189,7 @@ package body GUI is
       Win.Set_Default_Size (Gint (Settings.Get ("width", 800)),
                             Gint (Settings.Get ("height", 640)));
       Win.On_Destroy (On_Destroy'Access);
+      Win.On_Delete_Event (On_Win_Delete'Access);
       Win.On_Key_Press_Event (On_Key_Press'Access);
       Win.On_Key_Release_Event (On_Key_Release'Access);
       Win.On_Focus_Out_Event (On_Focus_Out'Access);
@@ -1232,8 +1244,6 @@ package body GUI is
       Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
       Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);
       Add_Item (M_Machine, "Mo_nitor (Shift+F12)", On_Monitor'Access);
-      Add_Item (M_Machine, "_Studio: assembler and debugger",
-                On_Studio'Access);
       Add_Item (M_Machine, "Paste text (Ctrl+Shift+V)", On_Paste'Access);
       Add_Item (M_Machine, "_Quick save (Shift+F9)", On_Quick_Save'Access);
       Add_Item (M_Machine, "Quick _load (Shift+F10)", On_Quick_Load'Access);
@@ -1410,6 +1420,8 @@ package body GUI is
 
       Win.Show_All;
       if Open_Studio then
+         Win.Set_Title ("AdaC64 (studio)");
+         Studio.Quit_App := Quit_App'Access;
          Studio.Open (Win, To_String (Studio_File));
       end if;
       --  Run below GTK's redraw priority (120), so the window is still

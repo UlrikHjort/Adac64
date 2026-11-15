@@ -105,11 +105,13 @@ package body Sprite_Editor is
    --  Emulator link
    ---------------------------------------------------------------------
 
-   function VIC_Bank return Word is
-     (Word (3 - Natural (Machine.IO_Peek (16#DD00#) and 3)) * 16#4000#);
+   function VIC_Bank return Word is (Machine.VIC_Bank_Address);
 
-   function Screen_Base return Word is
-     (VIC_Bank + Word (Shift_Right (Machine.IO_Peek (16#D018#), 4)) * 16#400#);
+   --  Screen offset inside the VIC bank
+   function Screen_Offset return Word is
+     (Word (Shift_Right (Machine.IO_Peek (16#D018#), 4)) * 16#400#);
+
+   function Screen_Base return Word is (VIC_Bank + Screen_Offset);
 
    Show_Addr : constant Word := 16#0340#;     --  cassette buffer, pointer 13
 
@@ -150,7 +152,6 @@ package body Sprite_Editor is
    procedure Grab_From_Emulator is
       Enabled : constant Byte := Machine.IO_Peek (16#D015#);
       Bank : constant Word := VIC_Bank;
-      Scr  : constant Word := Screen_Base;
       Got  : Natural := 0;
       First : constant Positive := Count + 1;
    begin
@@ -158,9 +159,10 @@ package body Sprite_Editor is
          if (Shift_Right (Enabled, K) and 1) /= 0 and then Count < Max_Sprites
          then
             declare
-               Ptr : constant Byte := Machine.RAM_Peek (Scr + 16#3F8# + Word (K));
+               Ptr : constant Byte :=
+                 Machine.VIC_Peek (Screen_Offset + 16#3F8# + Word (K));
                S : constant Sprite := From_Memory
-                 (Machine.RAM_Peek'Access, Bank + Word (Ptr) * 64,
+                 (Machine.VIC_Peek'Access, Word (Ptr) * 64,
                   Machine.IO_Peek (16#D027# + Word (K)) and 15,
                   (Shift_Right (Machine.IO_Peek (16#D01C#), K) and 1) /= 0);
             begin

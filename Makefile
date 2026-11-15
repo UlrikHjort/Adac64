@@ -4,6 +4,7 @@ KLAUS ?= tests/6502_functional_test.bin
 all:
 	mkdir -p bin obj
 	gprbuild -P emu.gpr -j0
+	ln -sf adac64 bin/adac64-studio
 
 tests: all
 	mkdir -p obj/tests obj/tests_dbg
@@ -13,6 +14,7 @@ tests: all
 	bin/kbd_test
 	bin/debug_test
 	bin/sprite_test
+	bin/charset_test
 	sh tests/basic_test.sh
 	@if [ -f $(KLAUS) ]; then bin/cpu_test $(KLAUS); else \
 	  echo "Skipping CPU test: put Klaus Dormann's 6502_functional_test.bin in tests/"; fi

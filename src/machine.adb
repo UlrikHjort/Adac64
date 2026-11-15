@@ -415,6 +415,11 @@ package body Machine is
       return Mem (VIC_RAM_Base + A16);
    end VIC_Mem;
 
+   function VIC_Peek (Addr : Word) return Byte is (VIC_Mem (Addr));
+   function VIC_Bank_Address return Word is (Word (VIC_Bank_Base));
+   function Char_ROM_Peek (Offset : Natural) return Byte is
+     (Mem (VIC_Char_Base + Offset mod 4096));
+
    function VIC_Color (Index : Natural) return Byte is
      (Color_RAM (VIC_Color_Bank * 1024 + Index));
 
