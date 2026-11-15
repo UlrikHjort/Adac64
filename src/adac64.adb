@@ -25,7 +25,7 @@
 
 --  AdaC64 - a Commodore 64 / 128 emulator written in Ada with GtkAda.
 --
---  Usage: adac64 [options] [file.d64|file.t64|file.prg]
+--  Usage: adac64 [options] [file.d64|.d71|.d81|.g64|.t64|.tap|.prg|.crt]
 --    --c64 / --c128     start as a Commodore 64 / 128 (default: last used)
 --    --vic20 [3k|8k|16k|24k|35k]  start as a VIC-20 (with RAM expansion)
 --    --80 / --40        C128: 40/80 key down (80 columns) / up
@@ -45,7 +45,7 @@
 --    --pen FX FY        headless: light pen pressed at FX, FY (0..1)
 --    --paddle-pos FX FY  headless: mouse position (0..1) for mouse paddles
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
---    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
+--    --drive 1541|1571|1581  drive 8 model (1571 / 1581 need their ROMs)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
 --    --attach FILE      attach a disk image without autostarting
 --    --headless N       run N frames without GUI, then save screenshots
@@ -471,6 +471,8 @@ begin
    end if;
    if To_String (Drive_Kind) = "1571" then
       Machine.Set_Drive_Type (Drive1541.D1571);
+   elsif To_String (Drive_Kind) = "1581" then
+      Machine.Set_Drive_Type (Drive1541.D1581);
    end if;
    if Length (Attach) > 0 then
       Machine.Attach (To_String (Attach), Ok);

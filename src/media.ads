@@ -33,7 +33,7 @@ with Types; use Types;
 
 package Media is
 
-   type Media_Kind is (None, D64, D71, G64, T64, PRG);
+   type Media_Kind is (None, D64, D71, D81, G64, T64, PRG);
 
    procedure Attach (Path : String; Ok : out Boolean);
    procedure Detach;

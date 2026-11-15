@@ -185,9 +185,12 @@ package body Machine.Core is
    end Bus_Write;
 
    procedure Update_Drive_State is
+      --  the 1581 reads D81 disks, the 1541 / 1571 the GCR ones
       Want : constant Boolean :=
         True_Drive and then Drive1541.ROM_Loaded
-        and then Media.Kind in Media.D64 | Media.D71 | Media.G64;
+        and then (if Drive1541."=" (Drive1541.Model, Drive1541.D1581)
+                  then Media.Kind = Media.D81
+                  else Media.Kind in Media.D64 | Media.D71 | Media.G64);
    begin
       if Want and then not Drive_On then
          Drive1541.Reset;

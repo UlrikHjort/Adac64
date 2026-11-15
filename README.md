@@ -22,6 +22,7 @@ leave some out). The files are found by these names:
 | C16 / Plus/4 | `roms/plus4/` (or `<roms>/PLUS4/`) | `basic-318006-01.bin`, `kernal-318004-05.bin` (PAL), `kernal-318005-05.bin` (NTSC); the Plus/4's 3-plus-1 programs: `3plus1-317053-01.bin`, `3plus1-317054-01.bin` (optional). The zimmers.net names (`basic.318006-01.bin`, `3plus1low.317053-01.bin`, ...) work too |
 | 1541 | `roms/drives/` or `<roms>/DRIVES/` | `1541-II.251968-03.bin`, or `dos1541.bin` = `1541-c000.325302-01.bin` + `1541-e000.901229-05.bin` |
 | 1571 | `roms/drives/` | `1571-rom.310654-05.bin` |
+| 1581 | `roms/drives/` or `<roms>/DRIVES/` | `1581-rom.318045-02.bin` (VICE: `dos1581-318045-02.bin`) |
 
 `<roms>` is `/usr/share/vice` unless `--roms DIR` says otherwise;
 `roms/...` is looked for next to `bin/` and in the current directory. To
@@ -47,6 +48,7 @@ check that you have the expected versions (`sha1sum FILE`):
     8e0547430135ba462525c224e76356bd3d430f11  1541-c000.325302-01.bin
     f5d60777440829e46dc91285e662ba072acd2d8b  1541-e000.901229-05.bin
     f1be619c106641a685f6609e4d43d6fc9eac1e70  1571-rom.310654-05.bin
+    01228eae6f066bd9b7b2b6a7fa3f667e41dad393  1581-rom.318045-02.bin
 
 Without a drive ROM the emulator still works, with KERNAL-level disk
 access instead of an emulated drive (see Drive 8 below).
@@ -215,6 +217,15 @@ its CIA for the C128 fast serial / burst mode, which the C128 KERNAL and CP/M
 use automatically (several times faster than a 1541; CP/M boots in ~40 s at
 real speed). On a C64 it behaves like a 1541.
 
+**1581** (File menu or `--drive 1581`; needs `1581-rom.318045-02.bin`, see
+[ROMs](#roms)): the 3.5" drive for D81 images (3160 blocks, 80 tracks of 40
+sectors): its 2 MHz 6502, 8 KB RAM and 32 KB DOS, the 8520 CIA for the
+serial bus and the C128's burst mode, and the WD1772 controller reading and
+writing the D81 sector by sector as the disk turns (index pulses, sector
+IDs with their CRC, 300 rpm). With a 1541 or 1571 selected, D81 images are
+read through the KERNAL instead (as below); `tests/disk_test.sh` checks
+both, including SAVE onto the disk.
+
 **Fast KERNAL loading** (on by default, File menu): with the true drive
 active, KERNAL `LOAD`s from drive 8 are served instantly from the image and
 written straight into RAM, like a fast-load cartridge, so "one-filer" cracks
@@ -227,7 +238,7 @@ always use the real drive. `--no-fast-load` disables it.
 
 **Fast mode** (File menu toggle, `--fast-drive`, or no drive ROM): KERNAL
 `LOAD`/`SAVE` are trapped at `$FFD5`/`$FFD8` and served instantly from D64,
-T64 and PRG images. With no image attached, drive 8 is always the current host
+D71, D81, T64 and PRG images. With no image attached, drive 8 is always the current host
 directory (`NAME.prg`), and `SAVE"NAME",8` writes `NAME.prg` there.
 
 ### Tape

@@ -35,10 +35,11 @@ use type Media.Media_Kind;
 
 package body Drive1541 is
 
-   RAM : Byte_Array (0 .. 2047) := (others => 0);
+   RAM : Byte_Array (0 .. 8191) := (others => 0);    --  2K (1541 / 1571)
    ROM_1541 : Byte_Array (0 .. 16383) := (others => 0);
    ROM_1571 : Byte_Array (0 .. 32767) := (others => 0);
-   Have_1541, Have_1571 : Boolean := False;
+   ROM_1581 : Byte_Array (0 .. 32767) := (others => 0);
+   Have_1541, Have_1571, Have_1581 : Boolean := False;
    Current_Model : Drive_Model := D1541;
 
    --  1571 extras
@@ -54,6 +55,34 @@ package body Drive1541 is
    Byte_Level  : Boolean := False;      --  /BYTE READY line (VIA1 PA7)
 
    function Is_1571 return Boolean is (Current_Model = D1571);
+   function Is_1581 return Boolean is (Current_Model = D1581);
+
+   ---------------------------------------------------------------------
+   --  1581: WD1772 working on the D81 image sector by sector. A physical
+   --  sector (cylinder C, head H, sector 1 .. 10, 512 bytes) is D81
+   --  sectors C * 40 + (H xor 1) * 20 + (sector - 1) * 2 and the next one
+   --  (as in VICE: the side in the sector IDs is H xor 1)
+   ---------------------------------------------------------------------
+
+   type W_Mode_Kind is (W_Idle, W_Reading, W_Writing, W_Formatting);
+   W_Track, W_Sector, W_Data : Byte := 0;   --  registers 1, 2, 3
+   W_Type1 : Boolean := True;      --  status shows type I bits
+   W_Busy  : Boolean := False;
+   W_DRQ   : Boolean := False;
+   W_RNF   : Boolean := False;      --  record not found
+   W_WP    : Boolean := False;      --  write protect error
+   W_Wait  : Long_Long_Integer := 0; --  half us until the command acts
+   W_Mode  : W_Mode_Kind := W_Idle;
+   W_Buf   : Byte_Array (0 .. 511) := (others => 0);
+   W_Pos, W_Len : Natural := 0;
+   W_Offset : Natural := 0;         --  image offset of the sector
+   W_Dir   : Integer := 1;          --  last step direction
+   Cyl     : Natural := 0;          --  head position 0 .. 79
+   Head81  : Natural := 0;          --  head selected (CIA PA0 = 0: 1)
+   D81_In  : Boolean := False;
+   D81_Dirty : Boolean := False;
+   Disk_Changed : Boolean := True;
+   CIA_PA_Out, CIA_PB_Out : Byte := 16#FF#;
 
    VIA1, VIA2 : VIA.Chip;
    Drive_Time : Long_Long_Integer := 0;
@@ -94,6 +123,245 @@ package body Drive1541 is
    Motor_Was_On : Boolean := False;
 
    function Disk_Present return Boolean is (Disk /= No_Disk);
+
+   function Motor_81 return Boolean is ((CIA_PA_Out and 4) = 0);
+
+   --  Index pulse: one turn every 200 ms, the hole seen for 4 ms
+   function W_Index (Now : Long_Long_Integer) return Boolean is
+     (D81_In and then Motor_81 and then Now mod 400_000 < 8_000);
+
+   function W_Status (Now : Long_Long_Integer) return Byte is
+     ((if W_Busy then 1 else 0)
+      or (if W_Type1 then
+            (if W_Index (Now) then 2 else 0) or (if Cyl = 0 then 4 else 0)
+            or 16#20#
+          else
+            (if W_DRQ then 2 else 0) or (if W_RNF then 16#10# else 0)
+            or (if W_WP then 16#40# else 0))
+      or (if W_Type1 and then not Media.Image_Writable then 16#40# else 0)
+      or (if Motor_81 then 16#80# else 0));
+
+   procedure W_Done is
+   begin
+      W_Busy := False;
+      W_DRQ := False;
+      W_Mode := W_Idle;
+   end W_Done;
+
+   function W_Sector_Offset return Integer is
+   begin
+      if not D81_In or else Cyl > 79 or else Natural (W_Track) /= Cyl
+        or else W_Sector not in 1 .. 10
+      then
+         return -1;
+      end if;
+      return ((Cyl * 40 + (1 - Head81) * 20
+               + (Natural (W_Sector) - 1) * 2) * 256);
+   end W_Sector_Offset;
+
+   --  The disk turns once in 200 ms (400_000 half us); its 10 sectors
+   --  pass the head 20 ms apart, sector 1 at the index hole
+   Turn : constant := 400_000;
+   Sector_Time : constant := 40_000;
+
+   --  Half us until sector S (1 .. 10) reaches the head
+   function Wait_For_Sector (S : Natural) return Long_Long_Integer is
+     ((Long_Long_Integer (S - 1) * Sector_Time - Drive_Time mod Turn + Turn)
+      mod Turn + 200);
+
+   procedure W_Command (Cmd : Byte) is
+      Img : constant Byte_Array_Access := Media.Image_Data;
+   begin
+      if (Cmd and 16#F0#) = 16#D0# then            --  force interrupt
+         W_Done;
+         W_Type1 := True;
+         return;
+      end if;
+      W_RNF := False;
+      W_WP := False;
+      W_Busy := True;
+      W_DRQ := False;
+      if (Cmd and 16#80#) = 0 then                 --  type I: head moves
+         declare
+            Steps : Integer := 0;
+         begin
+            W_Type1 := True;
+            case Cmd and 16#E0# is
+               when 16#00# =>                              --  restore
+                  if (Cmd and 16#10#) = 0 then
+                     Steps := -Cyl;
+                     W_Track := 0;
+                  else                                     --  seek
+                     Steps := Integer (W_Data) - Integer (W_Track);
+                     W_Track := W_Data;
+                  end if;
+               when 16#20# => Steps := W_Dir;              --  step
+               when 16#40# => Steps := 1;                  --  step in
+               when others => Steps := -1;                 --  step out
+            end case;
+            if (Cmd and 16#E0#) /= 0 then
+               W_Dir := (if Steps < 0 then -1 else 1);
+               if (Cmd and 16#10#) /= 0 then               --  update
+                  W_Track := Byte ((Integer (W_Track) + Steps) mod 256);
+               end if;
+            end if;
+            Cyl := Natural (Integer'Max (0, Integer'Min (81, Cyl + Steps)));
+            if Steps /= 0 then
+               Disk_Changed := False;
+            end if;
+            W_Wait := 6_000 * Long_Long_Integer'Max (1, abs Long_Long_Integer (Steps));
+         end;
+         return;
+      end if;
+      W_Type1 := False;
+      W_Wait := 2_000;                              --  find the sector
+      case Cmd and 16#E0# is
+         when 16#80# =>                             --  read sector
+            declare
+               Off : constant Integer := W_Sector_Offset;
+            begin
+               if Off < 0 or else Img = null or else Off + 511 > Img'Last then
+                  W_RNF := True;
+                  W_Wait := 400_000;
+               else
+                  W_Buf := Img (Off .. Off + 511);
+                  W_Mode := W_Reading;
+                  W_Pos := 0;
+                  W_Len := 512;
+                  W_Wait := Wait_For_Sector (Natural (W_Sector));
+               end if;
+            end;
+         when 16#A0# =>                             --  write sector
+            declare
+               Off : constant Integer := W_Sector_Offset;
+            begin
+               if not Media.Image_Writable then
+                  W_WP := True;
+                  W_Wait := 100;
+               elsif Off < 0 or else Img = null or else Off + 511 > Img'Last
+               then
+                  W_RNF := True;
+                  W_Wait := 400_000;
+               else
+                  W_Mode := W_Writing;
+                  W_Offset := Off;
+                  W_Pos := 0;
+                  W_Len := 512;
+                  W_Wait := Wait_For_Sector (Natural (W_Sector));
+               end if;
+            end;
+         when 16#C0# =>                             --  read address
+            if D81_In and then Cyl <= 79 then
+               --  the next sector ID to pass the head
+               declare
+                  Next : constant Natural :=
+                    Natural ((Drive_Time mod Turn) / Sector_Time + 1) mod 10;
+               begin
+                  W_Buf (0 .. 5) :=
+                    (Byte (Cyl), Byte (1 - Head81), Byte (Next + 1), 2, 0, 0);
+                  declare
+                     --  the ID's CRC-CCITT (over A1 A1 A1 FE and the ID)
+                     C : Unsigned_16 := 16#FFFF#;
+                     procedure Add (B : Byte) is
+                     begin
+                        C := C xor Shift_Left (Unsigned_16 (B), 8);
+                        for I in 1 .. 8 loop
+                           C := (if (C and 16#8000#) /= 0
+                                 then Shift_Left (C, 1) xor 16#1021#
+                                 else Shift_Left (C, 1));
+                        end loop;
+                     end Add;
+                  begin
+                     for B of Byte_Array'(16#A1#, 16#A1#, 16#A1#, 16#FE#) loop
+                        Add (B);
+                     end loop;
+                     for I in 0 .. 3 loop
+                        Add (W_Buf (I));
+                     end loop;
+                     W_Buf (4) := Byte (Shift_Right (C, 8));
+                     W_Buf (5) := Byte (C and 16#FF#);
+                  end;
+                  W_Wait := Wait_For_Sector (Next + 1);
+               end;
+               W_Sector := Byte (Cyl);
+               W_Mode := W_Reading;
+               W_Pos := 0;
+               W_Len := 6;
+            else
+               W_RNF := True;
+               W_Wait := 400_000;
+            end if;
+         when 16#F0# =>                             --  write track
+            if not Media.Image_Writable then
+               W_WP := True;
+               W_Wait := 100;
+            else
+               W_Mode := W_Formatting;
+               W_Pos := 0;
+               W_Len := 6_250;                      --  one turn at 250 kbit/s
+            end if;
+         when others =>                             --  read track: none
+            W_RNF := True;
+            W_Wait := 400_000;
+      end case;
+   end W_Command;
+
+   procedure W_Tick (Half_Us : Long_Long_Integer) is
+   begin
+      if W_Busy and then W_Wait > 0 then
+         W_Wait := W_Wait - Half_Us;
+         if W_Wait <= 0 then
+            W_Wait := 0;
+            if W_Mode = W_Idle then
+               W_Done;                     --  a type I command, or an error
+            else
+               W_DRQ := True;              --  the data can flow
+            end if;
+         end if;
+      end if;
+   end W_Tick;
+
+   function W_Read_Data return Byte is
+   begin
+      if W_Mode = W_Reading and then W_DRQ then
+         W_Data := W_Buf (W_Pos);
+         W_Pos := W_Pos + 1;
+         if W_Pos >= W_Len then
+            W_Done;
+         end if;
+      end if;
+      return W_Data;
+   end W_Read_Data;
+
+   procedure W_Write_Data (Value : Byte) is
+      Img : constant Byte_Array_Access := Media.Image_Data;
+   begin
+      W_Data := Value;
+      if W_DRQ and then W_Mode = W_Writing then
+         W_Buf (W_Pos) := Value;
+         W_Pos := W_Pos + 1;
+         if W_Pos >= W_Len then
+            Img (W_Offset .. W_Offset + 511) := W_Buf;
+            D81_Dirty := True;
+            W_Done;
+         end if;
+      elsif W_DRQ and then W_Mode = W_Formatting then
+         W_Pos := W_Pos + 1;
+         if W_Pos >= W_Len then
+            --  the track's sectors are now empty
+            if Cyl <= 79 and then Img /= null then
+               declare
+                  Base : constant Natural :=
+                    (Cyl * 40 + (1 - Head81) * 20) * 256;
+               begin
+                  Img (Base .. Base + 20 * 256 - 1) := (others => 0);
+                  D81_Dirty := True;
+               end;
+            end if;
+            W_Done;
+         end if;
+      end if;
+   end W_Write_Data;
 
    function Sectors_On (Track : Natural) return Natural is
      (if Track <= 17 then 21
@@ -312,6 +580,10 @@ package body Drive1541 is
       Changed : Boolean := False;
       Img : constant Byte_Array_Access := Media.Image_Data;
    begin
+      if D81_Dirty then
+         D81_Dirty := False;
+         Media.Save_Image;
+      end if;
       if not Disk_Present or else Img = null then
          return;
       end if;
@@ -382,7 +654,10 @@ package body Drive1541 is
       if Img = null then
          return;
       end if;
-      if Media.Kind = Media.G64 then
+      if Media.Kind = Media.D81 then
+         D81_In := True;
+         Disk_Changed := True;
+      elsif Media.Kind = Media.G64 then
          if Img'Length > 12 + 84 * 8 then
             Insert_G64 (Img.all);
          end if;
@@ -409,6 +684,7 @@ package body Drive1541 is
    procedure Eject_Disk is
    begin
       Flush;
+      D81_In := False;
       Disk := No_Disk;
       Disk_Tracks := 0;
       for H in Tracks'Range loop
@@ -423,9 +699,13 @@ package body Drive1541 is
    --  Disk controller (VIA2) helpers
    ---------------------------------------------------------------------
 
-   function Motor_On return Boolean is ((VIA.Port_B_Out (VIA2) and 4) /= 0);
-   function LED_On return Boolean is ((VIA.Port_B_Out (VIA2) and 8) /= 0);
-   function Current_Track return Natural is (Half_Track / 2);
+   function Motor_On return Boolean is
+     (if Is_1581 then Motor_81 else (VIA.Port_B_Out (VIA2) and 4) /= 0);
+   function LED_On return Boolean is
+     (if Is_1581 then (CIA_PA_Out and 16#40#) /= 0
+      else (VIA.Port_B_Out (VIA2) and 8) /= 0);
+   function Current_Track return Natural is
+     (if Is_1581 then Cyl + 1 else Half_Track / 2);
 
    Last_Phase : Byte := 0;
 
@@ -523,15 +803,99 @@ package body Drive1541 is
    package CPU is new MOS6502 (Read => Drive_Read, Write => Drive_Write);
 
    procedure Update_Bus_Outputs is
-      PB : constant Byte := VIA.Port_B_Out (VIA1);
+      PB : constant Byte :=
+        (if Is_1581 then CIA_PB_Out else VIA.Port_B_Out (VIA1));
    begin
       IEC.Drive_DATA := (PB and 16#02#) /= 0;
       IEC.Drive_CLK  := (PB and 16#08#) /= 0;
       IEC.Drive_ATNA := (PB and 16#10#) /= 0;
    end Update_Bus_Outputs;
 
+   --  1581 CIA ports. A: 0 side (1 = head 0), 2 motor (0 = on), 3-4 device
+   --  number (8), 6 LED, 7 /disk changed. B: 0 DATA in, 1 DATA out, 2 CLK
+   --  in, 3 CLK out, 4 ATN acknowledge, 5 fast serial direction (1 = out),
+   --  6 write protect (0 = protected), 7 ATN in
+   procedure CIA_Ports_Changed is
+   begin
+      CIA_PA_Out := CIA.Port_A_Out (Drive_CIA);
+      CIA_PB_Out := CIA.Port_B_Out (Drive_CIA);
+      Head81 := (if (CIA_PA_Out and 1) /= 0 then 0 else 1);
+      Fast_Out := (CIA_PB_Out and 16#20#) /= 0;
+      Update_Bus_Outputs;
+   end CIA_Ports_Changed;
+
+   function Read_81 (Addr : Word) return Byte is
+   begin
+      case Addr is
+         when 16#0000# .. 16#1FFF# =>
+            return RAM (Natural (Addr));
+         when 16#4000# .. 16#5FFF# =>
+            case Addr and 15 is
+               when 0 =>
+                  declare
+                     Inp : constant Byte :=
+                       (if Disk_Changed then 0 else 16#80#);
+                  begin
+                     return (Inp and not Drive_CIA.DDRA)
+                       or (Drive_CIA.PRA and Drive_CIA.DDRA);
+                  end;
+               when 1 =>
+                  return (Drive_CIA.PRB and 16#1A#)
+                    or (if IEC.DATA then 16#01# else 0)
+                    or (if IEC.CLK then 16#04# else 0)
+                    or (if IEC.ATN then 16#80# else 0)
+                    or (if Media.Image_Writable then 16#40# else 0);
+               when others =>
+                  return CIA.Read (Drive_CIA, Natural (Addr and 15));
+            end case;
+         when 16#6000# .. 16#7FFF# =>
+            case Addr and 3 is
+               when 0 => return W_Status (Drive_Time);
+               when 1 => return W_Track;
+               when 2 => return W_Sector;
+               when others => return W_Read_Data;
+            end case;
+         when 16#8000# .. 16#FFFF# =>
+            return ROM_1581 (Natural (Addr and 16#7FFF#));
+         when others =>
+            return Hi (Addr);
+      end case;
+   end Read_81;
+
+   procedure Write_81 (Addr : Word; Value : Byte) is
+   begin
+      case Addr is
+         when 16#0000# .. 16#1FFF# =>
+            RAM (Natural (Addr)) := Value;
+         when 16#4000# .. 16#5FFF# =>
+            CIA.Write (Drive_CIA, Natural (Addr and 15), Value);
+            if (Addr and 15) <= 3 then
+               CIA_Ports_Changed;
+            end if;
+            --  Fast serial: a byte shifted out goes to the computer
+            if (Addr and 15) = 12 and then Fast_Out
+              and then (Drive_CIA.CRA and 16#40#) /= 0
+              and then To_Host /= null
+            then
+               To_Host (Value);
+            end if;
+         when 16#6000# .. 16#7FFF# =>
+            case Addr and 3 is
+               when 0 => W_Command (Value);
+               when 1 => W_Track := Value;
+               when 2 => W_Sector := Value;
+               when others => W_Write_Data (Value);
+            end case;
+         when others =>
+            null;
+      end case;
+   end Write_81;
+
    function Drive_Read (Addr : Word) return Byte is
    begin
+      if Is_1581 then
+         return Read_81 (Addr);
+      end if;
       case Addr is
          when 16#0000# .. 16#17FF# =>
             return RAM (Natural (Addr and 16#07FF#));
@@ -581,6 +945,10 @@ package body Drive1541 is
 
    procedure Drive_Write (Addr : Word; Value : Byte) is
    begin
+      if Is_1581 then
+         Write_81 (Addr, Value);
+         return;
+      end if;
       case Addr is
          when 16#0000# .. 16#17FF# =>
             RAM (Natural (Addr and 16#07FF#)) := Value;
@@ -763,29 +1131,59 @@ package body Drive1541 is
          Ok := False;
    end Load_ROM;
 
-   function ROM_Loaded return Boolean is
-     (if Is_1571 then Have_1571 else Have_1541);
+   procedure Load_ROM_1581 (Path : String; Ok : out Boolean) is
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+   begin
+      Open (F, In_File, Path);
+      Ok := Size (F) = 32768;
+      if Ok then
+         Byte_Array'Read (Stream (F), ROM_1581);
+         Have_1581 := True;
+      end if;
+      Close (F);
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         Ok := False;
+   end Load_ROM_1581;
+
    function Has_ROM (M : Drive_Model) return Boolean is
-     (if M = D1571 then Have_1571 else Have_1541);
+     (case M is
+         when D1541 => Have_1541,
+         when D1571 => Have_1571,
+         when D1581 => Have_1581);
+   function ROM_Loaded return Boolean is (Has_ROM (Current_Model));
    function Model return Drive_Model is (Current_Model);
 
    procedure Set_Model (M : Drive_Model) is
    begin
       Current_Model := M;
+      IEC.ATNA_And := M = D1581;
       Reset;
    end Set_Model;
 
    procedure Fast_Byte_From_Host (Value : Byte) is
    begin
-      if Is_1571 and then not Fast_Out then
+      if (Is_1571 or else Is_1581) and then not Fast_Out then
          CIA.Set_SDR (Drive_CIA, Value);
       end if;
    end Fast_Byte_From_Host;
-   function Peek_RAM (Addr : Natural) return Byte is (RAM (Addr mod 2048));
+   function Peek_RAM (Addr : Natural) return Byte is
+     (RAM (Addr mod (if Is_1581 then 8192 else 2048)));
    function Get_PC return Word is (CPU.PC);
 
    function Peek (Addr : Word) return Byte is
    begin
+      if Is_1581 then
+         return (case Addr is
+                    when 16#0000# .. 16#1FFF# => RAM (Natural (Addr)),
+                    when 16#8000# .. 16#FFFF# =>
+                       ROM_1581 (Natural (Addr and 16#7FFF#)),
+                    when others => 16#FF#);
+      end if;
       case Addr is
          when 16#0000# .. 16#17FF# => return RAM (Natural (Addr and 16#07FF#));
          when 16#8000# .. 16#FFFF# =>
@@ -797,7 +1195,9 @@ package body Drive1541 is
 
    procedure Poke (Addr : Word; Value : Byte) is
    begin
-      if Addr < 16#1800# then
+      if Is_1581 and then Addr < 16#2000# then
+         RAM (Natural (Addr)) := Value;
+      elsif Addr < 16#1800# then
          RAM (Natural (Addr and 16#07FF#)) := Value;
       end if;
    end Poke;
@@ -814,6 +1214,13 @@ package body Drive1541 is
             F (I + 1) := '.';
          end if;
       end loop;
+      if Is_1581 then
+         return "1581 PC=$" & X2 (Hi (CPU.PC)) & X2 (Lo (CPU.PC)) &
+           " A=$" & X2 (CPU.A) & " X=$" & X2 (CPU.X) & " Y=$" & X2 (CPU.Y) &
+           " SP=$" & X2 (CPU.SP) & " " & F & "  track" & Natural'Image (Cyl + 1)
+           & " head" & Head81'Image & (if Motor_On then " motor" else "")
+           & (if LED_On then " LED" else "");
+      end if;
       return (if Is_1571 then "1571" else "1541") & " PC=$" & X2 (Hi (CPU.PC)) & X2 (Lo (CPU.PC)) &
         " A=$" & X2 (CPU.A) & " X=$" & X2 (CPU.X) & " Y=$" & X2 (CPU.Y) &
         " SP=$" & X2 (CPU.SP) & " " & F &
@@ -836,6 +1243,17 @@ package body Drive1541 is
       Fast_Clock := False;
       Fast_Out := False;
       Byte_Level := False;
+      W_Done;
+      W_Type1 := True;
+      W_RNF := False;
+      W_WP := False;
+      W_Wait := 0;
+      W_Track := 0;
+      W_Sector := 0;
+      CIA_PA_Out := 16#FF#;
+      CIA_PB_Out := 16#FF#;
+      Head81 := 0;
+      IEC.ATNA_And := Is_1581;
       if Side /= 0 then
          declare
             Old : constant Natural := Cur;
@@ -869,6 +1287,13 @@ package body Drive1541 is
 
    procedure ATN_Changed is
    begin
+      if Is_1581 then
+         if IEC.ATN then
+            CIA.Set_Flag (Drive_CIA, 16#10#);   --  ATN asserted: FLAG
+         end if;
+         Update_Bus_Outputs;
+         return;
+      end if;
       VIA.Set_CA1 (VIA1, IEC.ATN);
    end ATN_Changed;
 
@@ -880,9 +1305,11 @@ package body Drive1541 is
       Unit : Long_Long_Integer;
    begin
       while Drive_Time < Target loop
-         Unit := (if Fast_Clock then 1 else 2);
-         CPU.IRQ_Line := VIA.IRQ (VIA1) or else VIA.IRQ (VIA2)
-           or else (Is_1571 and then Drive_CIA.IRQ);
+         Unit := (if Fast_Clock or else Is_1581 then 1 else 2);
+         CPU.IRQ_Line :=
+           (if Is_1581 then Drive_CIA.IRQ
+            else VIA.IRQ (VIA1) or else VIA.IRQ (VIA2)
+                 or else (Is_1571 and then Drive_CIA.IRQ));
          --  Do not start an instruction whose bus access (its last cycle)
          --  would happen at or after the target time: the computer has not
          --  reached that moment yet.
@@ -896,6 +1323,12 @@ package body Drive1541 is
             end;
          end if;
          CPU.Step (N);
+         if Is_1581 then
+            CIA.Tick (Drive_CIA, N);
+            W_Tick (Long_Long_Integer (N));
+            Drive_Time := Drive_Time + Long_Long_Integer (N);
+            goto Next;
+         end if;
          VIA.Tick (VIA1, N);
          VIA.Tick (VIA2, N);
          if Is_1571 then
@@ -904,6 +1337,7 @@ package body Drive1541 is
          end if;
          Rotate (N * Natural (Unit));
          Drive_Time := Drive_Time + Long_Long_Integer (N) * Unit;
+         <<Next>>
       end loop;
    end Run_Until;
 
@@ -940,6 +1374,19 @@ package body Drive1541 is
       Boolean'Write (S, Byte_Level);
       Byte_Array'Write (S, WD_Regs);
       CIA.Chip'Write (S, Drive_CIA);
+      Byte'Write (S, W_Track); Byte'Write (S, W_Sector);
+      Byte'Write (S, W_Data);
+      Boolean'Write (S, W_Type1); Boolean'Write (S, W_Busy);
+      Boolean'Write (S, W_DRQ); Boolean'Write (S, W_RNF);
+      Boolean'Write (S, W_WP);
+      Long_Long_Integer'Write (S, W_Wait);
+      W_Mode_Kind'Write (S, W_Mode);
+      Byte_Array'Write (S, W_Buf);
+      Natural'Write (S, W_Pos); Natural'Write (S, W_Len);
+      Natural'Write (S, W_Offset); Integer'Write (S, W_Dir);
+      Natural'Write (S, Cyl); Natural'Write (S, Head81);
+      Boolean'Write (S, D81_In); Boolean'Write (S, Disk_Changed);
+      Byte'Write (S, CIA_PA_Out); Byte'Write (S, CIA_PB_Out);
    end Save_State;
 
    procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
@@ -979,6 +1426,20 @@ package body Drive1541 is
       Boolean'Read (S, Byte_Level);
       Byte_Array'Read (S, WD_Regs);
       CIA.Chip'Read (S, Drive_CIA);
+      Byte'Read (S, W_Track); Byte'Read (S, W_Sector);
+      Byte'Read (S, W_Data);
+      Boolean'Read (S, W_Type1); Boolean'Read (S, W_Busy);
+      Boolean'Read (S, W_DRQ); Boolean'Read (S, W_RNF);
+      Boolean'Read (S, W_WP);
+      Long_Long_Integer'Read (S, W_Wait);
+      W_Mode_Kind'Read (S, W_Mode);
+      Byte_Array'Read (S, W_Buf);
+      Natural'Read (S, W_Pos); Natural'Read (S, W_Len);
+      Natural'Read (S, W_Offset); Integer'Read (S, W_Dir);
+      Natural'Read (S, Cyl); Natural'Read (S, Head81);
+      Boolean'Read (S, D81_In); Boolean'Read (S, Disk_Changed);
+      Byte'Read (S, CIA_PA_Out); Byte'Read (S, CIA_PB_Out);
+      IEC.ATNA_And := Is_1581;
       Update_Bus_Outputs;
    end Load_State;
 

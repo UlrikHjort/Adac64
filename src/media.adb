@@ -224,6 +224,9 @@ package body Media is
       elsif Ends_With (Path, ".d71") or else Data'Length in 349_696 | 351_062
       then
          Image_Kind := D71;
+      elsif Ends_With (Path, ".d81") or else Data'Length in 819_200 | 822_400
+      then
+         Image_Kind := D81;
       elsif Ends_With (Path, ".d64") or else Data'Length in 174_848 | 175_531
         | 196_608 | 197_376
       then
@@ -238,7 +241,7 @@ package body Media is
       end if;
       Good := (others => True);
       Disk := null;
-      if Image_Kind in D64 | D71 then
+      if Image_Kind in D64 | D71 | D81 then
          Disk := Image;
       elsif Image_Kind = G64 then
          Decode_G64;
@@ -279,7 +282,7 @@ package body Media is
       use Ada.Streams.Stream_IO;
       F : File_Type;
    begin
-      if Image = null or else Image_Kind not in D64 | D71 | G64
+      if Image = null or else Image_Kind not in D64 | D71 | D81 | G64
         or else not Writable
       then
          return;
@@ -474,6 +477,14 @@ package body Media is
    function Sector_Offset (Track, Sector : Natural) return Integer is
       Off : Natural := 0;
    begin
+      if Image_Kind = D81 then
+         --  80 tracks of 40 (logical) sectors
+         if Track not in 1 .. 80 or else Sector >= 40 then
+            return -1;
+         end if;
+         Off := ((Track - 1) * 40 + Sector) * 256;
+         return (if Off + 255 > Disk'Last then -1 else Off);
+      end if;
       if Image_Kind = D71 and then Track in 36 .. 70 then
          declare
             O : constant Integer := Sector_Offset (Track - 35, Sector);
@@ -535,8 +546,8 @@ package body Media is
       Blocks : Natural; Stop : in out Boolean);
 
    procedure Walk_Directory (Visit : Dir_Visitor) is
-      T : Natural := 18;
-      S : Natural := 1;
+      T : Natural := (if Image_Kind = D81 then 40 else 18);
+      S : Natural := (if Image_Kind = D81 then 3 else 1);
       Off : Integer;
       Stop : Boolean := False;
       Guard : Natural := 0;
@@ -548,7 +559,7 @@ package body Media is
             Unreliable := True;
          end if;
          Guard := Guard + 1;
-         exit when Guard > 40;
+         exit when Guard > 100;
          for E in 0 .. 7 loop
             declare
                B : constant Natural := Off + E * 32;
@@ -590,6 +601,25 @@ package body Media is
          Add_Entry (L, Blocks, Name, TS);
       end Visit;
    begin
+      if Image_Kind = D81 then
+         --  Header 40/0: name at $04, ID and DOS type at $16-$1A; BAM in
+         --  40/1 (tracks 1-40) and 40/2 (41-80), 6 bytes per track from $10
+         declare
+            H : constant Integer := Sector_Offset (40, 0);
+         begin
+            Start_Listing (L, Disk (H + 16#04# .. H + 16#13#),
+                           Disk (H + 16#16# .. H + 16#1A#));
+            Walk_Directory (Visit'Unrestricted_Access);
+            for T in 1 .. 80 loop
+               if T /= 40 then
+                  Free_Blocks := Free_Blocks + Natural
+                    (Disk (Sector_Offset (40, (if T <= 40 then 1 else 2))
+                           + 16#10# + 6 * ((T - 1) mod 40)));
+               end if;
+            end loop;
+            return Finish_Listing (L, Free_Blocks);
+         end;
+      end if;
       Start_Listing (L, Disk (BAM + 16#90# .. BAM + 16#9F#),
                      Disk (BAM + 16#A2# .. BAM + 16#A6#));
       Walk_Directory (Visit'Unrestricted_Access);
@@ -799,7 +829,7 @@ package body Media is
       Data := null;
       Unreliable := False;
       case Image_Kind is
-         when G64 | D71 =>
+         when G64 | D71 | D81 =>
             if Disk = null then
                null;
             elsif Is_Dir then
@@ -934,7 +964,7 @@ package body Media is
          end if;
       end Visit;
    begin
-      if Image_Kind not in D64 | D71 | G64 or else Disk = null then
+      if Image_Kind not in D64 | D71 | D81 | G64 or else Disk = null then
          return "";
       end if;
       Walk_Directory (Visit'Unrestricted_Access);
@@ -971,7 +1001,7 @@ package body Media is
          end if;
       end Visit;
    begin
-      if Image_Kind not in D64 | D71 | G64 or else Disk = null then
+      if Image_Kind not in D64 | D71 | D81 | G64 or else Disk = null then
          return "*";
       end if;
       Walk_Directory (Visit'Unrestricted_Access);

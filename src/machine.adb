@@ -98,6 +98,18 @@ package body Machine is
       exception
          when others => null;
       end Try;
+
+      procedure Try_1581 (Path : String) is
+         Got : Boolean;
+      begin
+         if not Drive1541.Has_ROM (Drive1541.D1581)
+           and then Ada.Directories.Exists (Path)
+         then
+            Drive1541.Load_ROM_1581 (Path, Got);
+         end if;
+      exception
+         when others => null;
+      end Try_1581;
    begin
       if Length (Drive_ROM_Path) > 0 then
          Try (To_String (Drive_ROM_Path));
@@ -117,6 +129,12 @@ package body Machine is
          Try (Exe_Dir & "/../roms/drives/1571-rom.310654-05.bin");
          Try ("roms/drives/1571-rom.310654-05.bin");
       end if;
+      if not Drive1541.Has_ROM (Drive1541.D1581) then
+         Try_1581 (ROM_Dir & "/DRIVES/dos1581-318045-02.bin");
+         Try_1581 (ROM_Dir & "/DRIVES/dos1581");
+         Try_1581 (Exe_Dir & "/../roms/drives/1581-rom.318045-02.bin");
+         Try_1581 ("roms/drives/1581-rom.318045-02.bin");
+      end if;
    exception
       when others => null;
    end Find_Drive_ROM;
@@ -125,7 +143,7 @@ package body Machine is
    begin
       Drive1541.Eject_Disk;
       Media.Attach (Path, Ok);
-      if Ok and then Media.Kind in Media.D64 | Media.D71 | Media.G64 then
+      if Ok and then Media.Kind in Media.D64 | Media.D71 | Media.D81 | Media.G64 then
          Drive1541.Insert_Disk;
       end if;
       Update_Drive_State;
@@ -166,7 +184,7 @@ package body Machine is
       if M /= Drive1541.Model then
          Drive1541.Eject_Disk;
          Drive1541.Set_Model (M);
-         if Media.Kind in Media.D64 | Media.D71 | Media.G64 then
+         if Media.Kind in Media.D64 | Media.D71 | Media.D81 | Media.G64 then
             Drive1541.Insert_Disk;
          end if;
          Drive_On := False;
@@ -816,7 +834,7 @@ package body Machine is
    --  Snapshots: the common part, then the machine's own
    ---------------------------------------------------------------------
 
-   Snapshot_Magic : constant String := "ADAC64SNAP8";
+   Snapshot_Magic : constant String := "ADAC64SNAP9";
 
    procedure Save_Snapshot (Path : String; Ok : out Boolean) is
       use Ada.Streams.Stream_IO;

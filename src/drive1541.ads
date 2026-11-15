@@ -27,6 +27,10 @@
 --  two 6522 VIAs (serial bus / disk controller) and a GCR disk surface
 --  generated from the attached D64 image.  The drive is run in lockstep
 --  with the computer through Run_Until.
+--  Also the 1571 (32 KB DOS, 1/2 MHz, double-sided, CIA for fast serial)
+--  and the 1581 (2 MHz, 8 KB RAM, 32 KB DOS, an 8520 CIA for the serial
+--  bus and fast serial, and a WD1772 reading and writing the D81 image
+--  sector by sector).
 
 
 with Ada.Streams;
@@ -34,10 +38,11 @@ with Types; use Types;
 
 package Drive1541 is
 
-   type Drive_Model is (D1541, D1571);
+   type Drive_Model is (D1541, D1571, D1581);
 
    procedure Load_ROM (Path : String; Ok : out Boolean);
    --  16 KB = 1541 DOS, 32 KB = 1571 DOS.
+   procedure Load_ROM_1581 (Path : String; Ok : out Boolean);   --  32 KB
    function ROM_Loaded return Boolean;            --  for the current model
    function Has_ROM (M : Drive_Model) return Boolean;
 
@@ -53,7 +58,8 @@ package Drive1541 is
    --  Power-on reset of the drive (time base restarts at 0).
 
    procedure Insert_Disk;
-   --  Build the GCR tracks from Media.Image_Data (a D64).
+   --  Build the GCR tracks from Media.Image_Data (a D64), or use the D81
+   --  directly (1581).
 
    procedure Eject_Disk;
    --  Write back modified tracks and remove the disk.
