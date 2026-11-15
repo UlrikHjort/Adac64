@@ -93,6 +93,25 @@ begin
    Check (not Break_Hit and then CPU_PC = Addr ("done")
           and then Peek (16#FB#) = 3, "program finished (counter = 3)");
 
+   --  Soft reset keeps RAM (the program and its counter), hard reset not
+   declare
+      Prog_Byte : constant Byte := Peek (Addr ("start"));
+   begin
+      Reset (Hard => False);
+      for F in 1 .. 150 loop
+         Run_Frame;
+      end loop;
+      --  (the KERNAL clears zero page and BASIC's NEW zeroes the first
+      --  line link at $0801, as on a real C64; the code itself survives)
+      Check (Peek (Addr ("start")) = Prog_Byte,
+             "soft reset keeps the program in RAM");
+      Reset (Hard => True);
+      for F in 1 .. 150 loop
+         Run_Frame;
+      end loop;
+      Check (Peek (Addr ("start")) /= Prog_Byte, "hard reset clears RAM");
+   end;
+
    if Failures > 0 then
       Put_Line (Failures'Image & " FAILED");
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);

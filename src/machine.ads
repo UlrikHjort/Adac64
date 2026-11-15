@@ -16,8 +16,10 @@ package Machine is
    function In_C64_Mode return Boolean;   --  C64, or C128 after GO64
    function Error_Message return String;
 
-   procedure Reset;
-   --  Hard reset (RAM pattern re-initialised, chips reset).
+   procedure Reset (Hard : Boolean := True);
+   --  Hard: like switching the machine off and on (RAM gets the power-up
+   --  pattern).  Soft: the reset button - CPU, chips, MMU and drive are
+   --  reset, RAM is kept (so a reset-proof program can catch it).
 
    procedure Run_Frame;
    --  Emulate one PAL frame (312 raster lines).
@@ -47,6 +49,10 @@ package Machine is
    --  (character ROM at $1000-$1FFF in banks 0 and 2).
    function VIC_Bank_Address return Word;          --  $0000/$4000/$8000/$C000
    function Char_ROM_Peek (Offset : Natural) return Byte;   --  0 .. 4095
+   procedure Claim_VIC;
+   --  Before writing VIC registers from outside a program: in C128 mode
+   --  set GRAPHM ($D8) to $FF, so the KERNAL's screen interrupt stops
+   --  rewriting $D011/$D016/$D018 from its shadow registers every frame.
    function IO_Peek (Addr : Word) return Byte;
    --  VIC-II / colour RAM / CIA register at $D000-$DFFF, whatever is
    --  banked in for the CPU (no side effects).

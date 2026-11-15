@@ -490,7 +490,7 @@ package body Forge is
       Update_Title;
    end Close_Tab;
 
-   Template : constant String :=
+   C64_Template : constant String :=
      "; New C64 program (ACME syntax) - F5 builds and runs it" & ASCII.LF &
      ASCII.LF &
      "        *= $0801" & ASCII.LF &
@@ -517,6 +517,17 @@ package body Forge is
      "        jmp loop" & ASCII.LF &
      ASCII.LF &
      "message !scr ""hello from adac64 forge"", 0" & ASCII.LF;
+
+   --  The C128 keeps BASIC programs at $1C01
+   function Template return String is
+      T : String := C64_Template;
+      I : constant Natural := Index (T, "*= $0801");
+   begin
+      if not Machine.In_C64_Mode and then I > 0 then
+         T (I .. I + 7) := "*= $1c01";
+      end if;
+      return T;
+   end Template;
 
    Basic_Template : constant String :=
      "10 rem adac64 forge - f5 runs this program" & ASCII.LF &

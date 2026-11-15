@@ -1137,13 +1137,15 @@ package body Machine is
       else 1_022_727.0 / 17_095.0);
    function Get_PC return Word is (CPU.PC);
 
-   procedure Reset is
+   procedure Reset (Hard : Boolean := True) is
    begin
-      --  Power-up RAM pattern: alternating 64-byte blocks of $00 / $FF
-      for I in 0 .. RAM_Size - 1 loop
-         Mem (I) := (if (I / 64) mod 2 = 0 then 16#00# else 16#FF#);
-      end loop;
-      Color_RAM := (others => 0);
+      if Hard then
+         --  Power-up RAM pattern: alternating 64-byte blocks of $00 / $FF
+         for I in 0 .. RAM_Size - 1 loop
+            Mem (I) := (if (I / 64) mod 2 = 0 then 16#00# else 16#FF#);
+         end loop;
+         Color_RAM := (others => 0);
+      end if;
 
       Port_DDR := 0;
       Port_Data := 0;
@@ -1988,6 +1990,13 @@ package body Machine is
       end loop;
       return False;
    end At_Breakpoint;
+
+   procedure Claim_VIC is
+   begin
+      if not C64_Mode then
+         Mem (16#D8#) := 16#FF#;      --  bank 0 RAM: GRAPHM
+      end if;
+   end Claim_VIC;
 
    function IO_Peek (Addr : Word) return Byte is
    begin

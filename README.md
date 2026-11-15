@@ -330,6 +330,17 @@ bitmap a running program shows. `tests/bitmap_test` assembles the
 exported viewer, runs it and checks that the VIC-II shows exactly the
 editor's picture in both modes.
 
+### Forge on the C128
+
+Forge works with the emulator in either mode (`bin/adac64-forge --c128`).
+BASIC tabs are tokenized as BASIC 7.0 at `$1C01`, new assembly programs
+start at `$1C01` with their BASIC line, and Run types RUN (programs at
+other addresses get `SYS`). Breakpoints, stepping and watchpoints work on
+the 8502 (not on the Z80). The editors' *Show in emulator* sets GRAPHM
+(`$D8`) to `$FF` first, so the C128 KERNAL stops rewriting the VIC
+registers every frame; sprites are shown from `$0E00`. The 80-column VDC
+screen is not covered by the editors.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -345,7 +356,8 @@ controller is used by default), and/or keypad 8/2/4/6 with diagonals, fire =
 keypad 0/5/Enter or Right Ctrl; alternatively the cursor keys.
 `bin/adac64 --list-joysticks` shows the controllers found.
 
-F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 reset,
+F9 autostart dialog, F10 toggle 40/80 view, F11 warp, F12 soft reset (the
+reset button: RAM is kept), Ctrl+F12 hard reset (power off and on),
 Shift+F9 quick save, Shift+F10 quick load, Shift+F12 monitor,
 Alt+Enter fullscreen, Ctrl+Shift+V paste text (typed into the machine).
 View menu: fullscreen, integer scaling, CRT scanlines.

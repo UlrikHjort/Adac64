@@ -153,7 +153,7 @@ package body GUI is
          (if Host_Joystick.Selected >= 0
           then " (" & Short (Host_Joystick.Name (Host_Joystick.Selected)) & ")"
           else "") &
-         "  |  F9 autostart  F10 40/80  F11 warp  F12 reset  Shift+F9/F10 quick save/load");
+         "  |  F9 autostart  F10 40/80  F11 warp  F12 reset (Ctrl: hard)  Shift+F9/F10 quick save/load");
    end Update_Status;
 
    procedure Sync_Menu is
@@ -648,10 +648,18 @@ package body GUI is
    procedure On_Reset (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
    begin
-      Machine.Reset;
+      Machine.Reset (Hard => False);
       Show_VDC := Machine.Model = C128 and then Machine.Key_4080_Down;
       Sync_Menu;
    end On_Reset;
+
+   procedure On_Hard_Reset (Item : access Gtk_Menu_Item_Record'Class) is
+      pragma Unreferenced (Item);
+   begin
+      Machine.Reset (Hard => True);
+      Show_VDC := Machine.Model = C128 and then Machine.Key_4080_Down;
+      Sync_Menu;
+   end On_Hard_Reset;
 
    procedure On_Model (Item : access Gtk_Check_Menu_Item_Record'Class) is
    begin
@@ -795,7 +803,7 @@ package body GUI is
          "Joystick (cursor set): arrow keys, fire = Right Ctrl/Right Alt" &
          ASCII.LF & ASCII.LF &
          "Host keys: F9 autostart, F10 40/80 column view (C128)," &
-         ASCII.LF & "  F11 warp, F12 reset" & ASCII.LF & ASCII.LF &
+         ASCII.LF & "  F11 warp, F12 soft reset, Ctrl+F12 hard reset" & ASCII.LF & ASCII.LF &
          "Drive 8 without an image = the current directory (NAME.prg);" &
          ASCII.LF & "SAVE""NAME"",8 always writes NAME.prg there.");
    end On_Keys_Help;
@@ -901,7 +909,9 @@ package body GUI is
                Keyboard.Release_All;
                Monitor.Open (Win, "stopped");
             else
-               Machine.Reset;
+               --  F12: reset button; Ctrl+F12: power off and on
+               Machine.Reset
+                 (Hard => (Event.State and Gdk.Types.Control_Mask) /= 0);
                Sync_Menu;
             end if;
          when others =>
@@ -1239,7 +1249,8 @@ package body GUI is
       Add_Radio (M_Machine, "SID 8580 (C64C / C128DCR)", SID_Group, Item_8580,
                  On_SID_Model'Access);
       Add_Separator (M_Machine);
-      Add_Item (M_Machine, "_Reset (F12)", On_Reset'Access);
+      Add_Item (M_Machine, "_Soft reset (F12)", On_Reset'Access);
+      Add_Item (M_Machine, "_Hard reset (Ctrl+F12)", On_Hard_Reset'Access);
       Add_Separator (M_Machine);
       Add_Item (M_Machine, "Save _snapshot...", On_Save_Snapshot'Access);
       Add_Item (M_Machine, "_Load snapshot...", On_Load_Snapshot'Access);

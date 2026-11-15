@@ -154,6 +154,7 @@ package body Bitmap_Editor is
          end if;
          return;
       end if;
+      Machine.Claim_VIC;
       for I in Bitmap'Range loop
          Machine.Poke (16#2000# + Word (I), Bitmap (I));
       end loop;

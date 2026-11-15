@@ -113,7 +113,9 @@ package body Sprite_Editor is
 
    function Screen_Base return Word is (VIC_Bank + Screen_Offset);
 
-   Show_Addr : constant Word := 16#0340#;     --  cassette buffer, pointer 13
+   --  C64: cassette buffer (pointer 13); C128: its sprite area (pointer 56)
+   function Show_Addr return Word is
+     (if Machine.In_C64_Mode then 16#0340# else 16#0E00#);
 
    procedure Send_To_Emulator (S : Sprite; Quiet : Boolean := False) is
       function Bit (On : Boolean; Old : Byte) return Byte is
@@ -126,6 +128,7 @@ package body Sprite_Editor is
          end if;
          return;
       end if;
+      Machine.Claim_VIC;
       for J in 0 .. 62 loop
          Machine.Poke (Show_Addr + Word (J), S.Data (J));
       end loop;
@@ -145,7 +148,9 @@ package body Sprite_Editor is
       Machine.Monitor_Poke (16#D015#, Machine.IO_Peek (16#D015#) or 1);
       if not Quiet then
          Status.Set_Text ("sprite 0 of the emulator shows sprite" &
-                          Natural'Image (Current - 1) & " (data at $0340)");
+                          Natural'Image (Current - 1) & " (data at $" &
+                          (if Machine.In_C64_Mode then "0340" else "0E00") &
+                          ")");
       end if;
    end Send_To_Emulator;
 

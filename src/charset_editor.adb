@@ -120,6 +120,7 @@ package body Charset_Editor is
          end if;
          return;
       end if;
+      Machine.Claim_VIC;
       for C in Char_Code loop
          Send_Glyph (C);
       end loop;

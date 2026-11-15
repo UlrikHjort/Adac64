@@ -183,6 +183,7 @@ package body Screen_Editor is
          end if;
          return;
       end if;
+      Machine.Claim_VIC;
       for Y in Row_Range loop
          for X in Col_Range loop
             Machine.Poke (Screen_At + Word (Y * 40 + X), Current (Y, X).Code);
