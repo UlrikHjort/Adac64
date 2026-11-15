@@ -50,6 +50,18 @@ if command -v cartconv >/dev/null; then
   cartconv -t vic20 -i $T/c8.prg -o $T/c8.crt >/dev/null 2>&1
   cart "VICE .crt" $T/c8.crt 2E
 fi
+# Mega-Cart: boot bank selects banks, software reset, banked app checks
+# ROM ($fd/$fe = $33), cartridge RAM ($fc = $5a) and NVRAM ($fa = $77)
+$B --asm tests/vic20_mc_boot.asm -o $T/mb.prg >/dev/null
+$B --asm tests/vic20_mc_app.asm -o $T/ma.prg >/dev/null
+python3 -I tests/tools/mkmegacart.py $T/mc.bin $T/mb.prg $T/ma.prg
+R=$($B --vic20 --headless 200 --png $T/s.png --monitor "m fa fe;m 900f 900f" $T/mc.bin | grep -E '^00FA|^900F' | cut -c7-20 | tr '\n' ' ')
+[ "$R" = "77 FF 5A 33 33 2E 00 00 00 00 " ] || fail "Mega-Cart (got $R)"
+echo "vic20: Mega-Cart: banks, software reset, RAM and NVRAM"
+$B --vic20 --headless 100 --png $T/s.png --save-snapshot $T/m.snap $T/mc.bin >/dev/null
+R=$($B --vic20 --headless 1 --png $T/s.png --load-snapshot $T/m.snap --monitor "m 4000 4000" | grep '^4000' | cut -c7-8)
+[ "$R" = "5A" ] || fail "Mega-Cart snapshot (\$4000 = $R)"
+echo "vic20: Mega-Cart: banking restored from a snapshot"
 # snapshots: 600 frames + snapshot + 300 frames = 900 frames straight
 # (the test cartridge counts in $fb all the time)
 R1=$($B --vic20 --headless 900 --png $T/s.png --monitor "m fb fb" $T/c8.prg | grep '^00FB' | cut -c7-8)

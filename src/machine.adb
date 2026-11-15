@@ -46,7 +46,10 @@ package body Machine is
    ROM_Empty        : constant := 16#32000#;          --  256 bytes of $FF
    Write_Sink       : constant := 16#32100#;          --  discarded writes
    Cart_Base        : constant := 16#32200#;          --  cartridge banks
-   Mem_Size         : constant := Cart_Base + CRT.Max_Banks * CRT.Bank_Size;
+   V20_XRAM         : constant := Cart_Base + CRT.Max_Banks * CRT.Bank_Size;
+   --  VIC-20 Mega-Cart: 32K RAM at V20_XRAM, 8K NVRAM after it; its 2 MB
+   --  ROM uses the cartridge bank area at Cart_Base
+   Mem_Size         : constant := V20_XRAM + 16#A000#;
 
    Mem : Byte_Array (0 .. Mem_Size - 1) := (others => 16#FF#);
    Color_RAM : Byte_Array (0 .. 2047) := (others => 0);
@@ -195,6 +198,21 @@ package body Machine is
    type V20_Block_Set is array (1 .. 5) of Boolean;
    V20_Cart : V20_Block_Set := (others => False);
    V20_Cart_Name : Unbounded_String;
+
+   --  Mega-Cart (as in VICE): bank registers $9C80 (high: $A000) and
+   --  $9D00 (low: $2000-$7FFF), bit 7 = RAM, bit 6 (high) = RAM writable;
+   --  the registers only count after a software reset ($9E00) has
+   --  toggled the OE flip-flop - until then both act as bank $7F
+   MC_Present  : Boolean := False;
+   MC_Bank_Low, MC_Bank_High : Byte := 0;
+   MC_OE       : Boolean := False;
+   MC_NVRAM_En : Boolean := True;
+   MC_Soft_Reset : Boolean := False;     --  requested by a $9E00 write
+   MC_Pending : Boolean := False;        --  a .crt turned out to be one
+   MC_RAM   : constant := V20_XRAM;
+   MC_NVRAM : constant := V20_XRAM + 16#8000#;
+   MC_ROM   : constant := Cart_Base;
+   procedure Map_Mega_Cart;
    function V20_Cart_Offset (B : Positive) return Natural is
      (Cart_Base + B * 16#2000#);
 
@@ -462,7 +480,9 @@ package body Machine is
       end loop;
       Set (16#80#, 16#8F#, ROM_C64_Char, Write_Sink);
       Set (16#90#, 16#9F#, IO_Page, IO_Page);
-      if V20_Cart (5) then
+      if MC_Present then
+         Map_Mega_Cart;
+      elsif V20_Cart (5) then
          Set (16#A0#, 16#BF#, V20_Cart_Offset (5), Write_Sink);
       elsif V20_Mem = Plus_35K or else V20_Block5 then
          RAM (16#A0#, 16#BF#);
@@ -473,6 +493,46 @@ package body Machine is
       Set (16#E0#, 16#FF#, ROM_C64_Kernal, Write_Sink);
       Kernal_High := True;
    end Map_VIC20;
+
+   procedure Map_Mega_Cart is
+      BL : constant Byte := (if MC_OE then MC_Bank_Low else 16#7F#);
+      BH : constant Byte := (if MC_OE then MC_Bank_High else 16#7F#);
+      RAM_Low  : constant Boolean := (BL and 16#80#) /= 0;
+      RAM_High : constant Boolean := (BH and 16#80#) /= 0;
+      Writable : constant Boolean :=
+        (BH and 16#40#) /= 0 and then RAM_Low and then RAM_High;
+      Low_ROM  : constant Natural :=
+        MC_ROM + Natural (BL and 16#7F#) * 16#2000#;
+      High_ROM : constant Natural :=
+        MC_ROM + 16#100000# + Natural (BH and 16#7F#) * 16#2000#;
+   begin
+      --  RAM123 ($0400-$0FFF): NVRAM
+      for P in Byte range 16#04# .. 16#0F# loop
+         Read_Map (P) := (if MC_NVRAM_En then MC_NVRAM + Natural (P) * 256
+                          else ROM_Empty);
+         Write_Map (P) := (if MC_NVRAM_En then MC_NVRAM + Natural (P) * 256
+                           else Write_Sink);
+      end loop;
+      --  blocks 1-3: the low ROM bank (the same 8K in all three) or RAM
+      for P in Byte range 16#20# .. 16#7F# loop
+         Read_Map (P) :=
+           (if not RAM_Low then Low_ROM + Natural (P mod 16#20#) * 256
+            elsif RAM_High then MC_RAM + Natural (P) * 256
+            else ROM_Empty);
+         Write_Map (P) := (if Writable then MC_RAM + Natural (P) * 256
+                           else Write_Sink);
+      end loop;
+      --  block 5: the high ROM bank, the low one, or RAM
+      for P in Byte range 16#A0# .. 16#BF# loop
+         Read_Map (P) :=
+           (if not RAM_High then High_ROM + Natural (P - 16#A0#) * 256
+            elsif not RAM_Low then Low_ROM + Natural (P - 16#A0#) * 256
+            else MC_RAM + Natural (P - 16#A0#) * 256);
+         Write_Map (P) :=
+           (if Writable then MC_RAM + Natural (P - 16#A0#) * 256
+            else Write_Sink);
+      end loop;
+   end Map_Mega_Cart;
 
    procedure Rebuild_Map is
    begin
@@ -717,6 +777,12 @@ package body Machine is
             return R;
          when 16#9400# .. 16#97FF# =>
             return (Color_RAM (Natural (Addr - 16#9400#)) and 15) or 16#F0#;
+         when 16#9800# .. 16#9FFF# =>
+            if MC_Present and then MC_NVRAM_En then
+               --  I/O 2 and I/O 3 show NVRAM $1800-$1FFF
+               return Mem (MC_NVRAM + 16#1800# + Natural (Addr - 16#9800#));
+            end if;
+            return 16#FF#;
          when others =>
             return 16#FF#;
       end case;
@@ -738,6 +804,28 @@ package body Machine is
             V20_Outputs;
          when 16#9400# .. 16#97FF# =>
             Color_RAM (Natural (Addr - 16#9400#)) := Value and 15;
+         when 16#9800# .. 16#9FFF# =>
+            if MC_Present then
+               if MC_NVRAM_En then
+                  Mem (MC_NVRAM + 16#1800# + Natural (Addr - 16#9800#)) :=
+                    Value;
+               end if;
+               if Addr >= 16#9C00# then
+                  case Addr and 16#180# is
+                     when 16#080# => MC_Bank_High := Value;
+                     when 16#100# => MC_Bank_Low := Value;
+                     when 16#180# =>
+                        MC_NVRAM_En := (Value and 1) = 0;
+                        MC_Bank_High := Value;
+                        MC_Bank_Low := Value;
+                     when others => null;
+                  end case;
+                  if (Addr and 16#200#) /= 0 then
+                     MC_Soft_Reset := True;    --  done after the instruction
+                  end if;
+                  Map_VIC20;
+               end if;
+            end if;
          when others =>
             null;
       end case;
@@ -1309,6 +1397,18 @@ package body Machine is
       end if;
    end V20_Load_Raw;
 
+   procedure Attach_Mega_Cart is
+   begin
+      MC_Present := True;
+      MC_OE := False;
+      MC_NVRAM_En := True;
+      MC_Soft_Reset := False;
+      MC_Bank_Low := 0;
+      MC_Bank_High := 0;
+      Mem (MC_RAM .. MC_RAM + 16#9FFF#) := (others => 16#FF#);
+      Reset;
+   end Attach_Mega_Cart;
+
    procedure V20_Load_CRT (D : Byte_Array; Ok : out Boolean) is
       function BE16 (I : Natural) return Natural is
         (Natural (D (I)) * 256 + Natural (D (I + 1)));
@@ -1317,6 +1417,20 @@ package body Machine is
       P : Natural := D'First + BE32 (D'First + 16#10#);
    begin
       Ok := False;
+      if BE16 (D'First + 16#16#) = 1 then
+         --  Mega-Cart: 256 chips of 8K, low half then high half
+         for Chip in 0 .. 255 loop
+            exit when P + 15 + 16#2000# > D'Last;
+            exit when Character'Val (D (P)) /= 'C';
+            Mem (MC_ROM + Chip * 16#2000# ..
+                 MC_ROM + Chip * 16#2000# + 16#1FFF#) :=
+              D (P + 16 .. P + 15 + 16#2000#);
+            P := P + BE32 (P + 4);
+         end loop;
+         MC_Pending := True;
+         Ok := True;
+         return;
+      end if;
       if BE16 (D'First + 16#16#) /= 0 then
          Err := To_Unbounded_String
            ("only generic VIC-20 cartridges (.crt type 0) are supported");
@@ -1347,6 +1461,15 @@ package body Machine is
          return;
       end if;
       V20_Cart := (others => False);
+      MC_Present := False;
+      if D'Length = 16#200000# then
+         --  a raw 2 MB image is a Mega-Cart
+         Mem (MC_ROM .. MC_ROM + 16#1FFFFF#) := D;
+         V20_Cart_Name :=
+           To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+         Attach_Mega_Cart;
+         return;
+      end if;
       for B in 1 .. 5 loop
          Mem (V20_Cart_Offset (B) .. V20_Cart_Offset (B) + 16#1FFF#) :=
            (others => 16#FF#);
@@ -1354,7 +1477,14 @@ package body Machine is
       if D'Length > 64 and then Character'Val (D (D'First)) = 'V'
         and then Character'Val (D (D'First + 3)) = '2'
       then
+         MC_Pending := False;
          V20_Load_CRT (D, Ok);
+         if Ok and then MC_Pending then
+            V20_Cart_Name :=
+              To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+            Attach_Mega_Cart;
+            return;
+         end if;
       else
          V20_Load_Raw (D, Ok);
          --  the other parts of a split image
@@ -1421,6 +1551,7 @@ package body Machine is
 
    procedure Detach_Cartridge is
    begin
+      MC_Present := False;
       V20_Cart := (others => False);
       V20_Cart_Name := Null_Unbounded_String;
       Cart_Present := False;
@@ -1724,6 +1855,19 @@ package body Machine is
       VIA.Reset (V20_VIA1);
       VIA.Reset (V20_VIA2);
       V20.Reset;
+      if MC_Present then
+         --  power-up / reset button: OE off; a software reset ($9E00)
+         --  toggles it, which switches the bank registers in or out
+         if MC_Soft_Reset then
+            MC_OE := not MC_OE;
+         else
+            MC_OE := False;
+            if Hard then
+               MC_NVRAM_En := True;
+            end if;
+         end if;
+         MC_Soft_Reset := False;
+      end if;
       Keyboard.Release_All;
       Update_VIC_Bank;
       Rebuild_Map;
@@ -2334,6 +2478,11 @@ package body Machine is
          Boolean'Write (S, V20_Block5);
          V20_Block_Set'Write (S, V20_Cart);
          String'Output (S, To_String (V20_Cart_Name));
+         Boolean'Write (S, MC_Present);
+         Byte'Write (S, MC_Bank_Low);
+         Byte'Write (S, MC_Bank_High);
+         Boolean'Write (S, MC_OE);
+         Boolean'Write (S, MC_NVRAM_En);
       end if;
       Close (F);
       Ok := True;
@@ -2428,6 +2577,12 @@ package body Machine is
          Boolean'Read (S, V20_Block5);
          V20_Block_Set'Read (S, V20_Cart);
          V20_Cart_Name := To_Unbounded_String (String'Input (S));
+         Boolean'Read (S, MC_Present);
+         Byte'Read (S, MC_Bank_Low);
+         Byte'Read (S, MC_Bank_High);
+         Boolean'Read (S, MC_OE);
+         Boolean'Read (S, MC_NVRAM_En);
+         MC_Soft_Reset := False;
          Drive1541.Set_Host_Clock (V20.Clock_Hz);
       end if;
       Close (F);
@@ -2911,6 +3066,9 @@ package body Machine is
       end if;
       if Drive_On then
          Drive1541.Run_Until (Total_Cycles);
+      end if;
+      if MC_Soft_Reset then
+         Reset (Hard => False);          --  Mega-Cart $9E00: keeps RAM
       end if;
       return Executed;
    end Step_System;

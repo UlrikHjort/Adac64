@@ -114,14 +114,17 @@ images of the generic type, `.prg` files loading at `$A000`/`$B000` (or 16K /
 images, and split images such as `game-6000.prg` + `game-a000.prg` (opening
 either part loads both). They are placed like VICE places them (16K images
 go to their block plus `$A000`, 4K images are mirrored) and the machine is
-reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Input →
+reset, so the KERNAL starts the cartridge from its `A0CBM` signature.
+**Mega-Cart** images (a raw 2 MB `.bin` or a VICE `.crt` of that type) get
+the cartridge's ROM banks, 32K RAM and 8K NVRAM, with the bank registers at
+`$9C80`/`$9D00`/`$9D80` and the software reset at `$9E00` as in VICE (the
+NVRAM lasts until the emulator quits). Input →
 *VIC-20 light pen on the mouse* turns the mouse into a light pen: while
 the left button is held (pen against the screen) the VIC latches the beam
 position into `$9006`/`$9007` when the beam passes the pen, and the pen's
 switch shows on the fire line. Snapshots (Machine menu, Shift+F9 /
 Shift+F10) work on the VIC-20 too, including the RAM expansion and a
-cartridge. Not there yet on the VIC-20: bank-switching cartridges
-(Mega-Cart, Final Expansion).
+cartridge. Not there yet on the VIC-20: the Final Expansion cartridge.
 
 **Paddles** (VIC-20 and C64; Input menu or `--paddles mouse|joystick`):
 on the mouse, the position over the picture turns the two paddles (left /
