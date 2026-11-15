@@ -48,6 +48,7 @@ private package Machine.Plus4_System is
    procedure Port_Write (Addr : Word; Value : Byte);
    procedure Poke (Addr : Word; Value : Byte);  --  into RAM
    function RAM_Read (Addr : Word) return Byte;
+   function ROM_Peek (Addr : Word) return Byte;  --  $8000-$FFFF as banked
 
    procedure Clock (N : Natural);         --  N TED cycles
    procedure Run_CPU (K : Natural);

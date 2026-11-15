@@ -197,16 +197,63 @@ package body Screen_Editor is
       Machine.Monitor_Poke (16#D023#, Charset_Data.Multi_Color_2);
    end Send_Charset;
 
+   function Is_TED return Boolean is
+     (Machine.Model in Machine.Plus4 | Machine.C16);
+
+   --  C16 / Plus/4: characters at the TED's matrix + $400, colours (mapped
+   --  to the nearest TED colours) in its attributes; the charset at $3000
+   procedure Send_To_TED (Quiet : Boolean) is
+      Matrix : constant Word :=
+        Word (Machine.IO_Peek (16#FF14#) and 16#F8#) * 256;
+   begin
+      for Y in Row_Range loop
+         for X in Col_Range loop
+            Machine.Poke (Matrix + 16#400# + Word (Y * 40 + X),
+                          Current (Y, X).Code);
+            Machine.Poke (Matrix + Word (Y * 40 + X),
+                          Video.To_TED (Current (Y, X).Color));
+         end loop;
+      end loop;
+      Machine.Monitor_Poke (16#FF19#, Video.To_TED (Border_Color));
+      Machine.Monitor_Poke (16#FF15#, Video.To_TED (Background_Color));
+      Machine.Monitor_Poke (16#FF0C#, 16#FF#);      --  cursor off screen
+      Machine.Monitor_Poke (16#FF0D#, 16#FF#);
+      if With_Charset.Get_Active then
+         for C in Charset_Data.Char_Code loop
+            for Y in Charset_Data.Row_Range loop
+               Machine.Poke (16#3000# + Word (C * 8 + Y),
+                             Charset_Data.Get (C) (Y));
+            end loop;
+         end loop;
+         Machine.Monitor_Poke (16#FF12#,
+                               Machine.IO_Peek (16#FF12#) and 16#3B#);
+         Machine.Monitor_Poke (16#FF13#,
+                               16#30# or (Machine.IO_Peek (16#FF13#) and 2));
+         Machine.Monitor_Poke
+           (16#FF07#, (Machine.IO_Peek (16#FF07#) or 16#80#) and 16#EF#);
+      end if;
+      if not Quiet then
+         Status.Set_Text ("the emulator shows the screen (characters at $" &
+                          Hex2 (Byte ((Matrix + 16#400#) / 256)) &
+                          "00, colours at $" & Hex2 (Byte (Matrix / 256)) &
+                          "00)" & (if With_Charset.Get_Active
+                                   then " with the charset at $3000"
+                                   else ""));
+      end if;
+   end Send_To_TED;
+
    procedure Send_To_Emulator (Quiet : Boolean := False) is
       Screen_At : constant Word :=
         Word (Shift_Right (Machine.IO_Peek (16#D018#), 4)) * 16#400#;
    begin
+      if Is_TED then
+         Send_To_TED (Quiet);
+         return;
+      end if;
       if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the " & (if Machine.Model = Machine.VIC20
-                                       then "VIC-20" else "C16 / Plus/4")
-                             & " has no VIC-II: this editor works with "
-                             & "the C64 and C128");
+            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works "
+                             & "with the C64, C128, C16 and Plus/4");
          end if;
          return;
       end if;
@@ -241,6 +288,34 @@ package body Screen_Editor is
    procedure Grab_From_Emulator is
       D018 : constant Byte := Machine.IO_Peek (16#D018#);
    begin
+      if Is_TED then
+         declare
+            Matrix : constant Word :=
+              Word (Machine.IO_Peek (16#FF14#) and 16#F8#) * 256;
+         begin
+            Load_Memory (Machine.TED_RAM_Peek'Access, Matrix + 16#400#,
+                         Machine.TED_Color_Peek'Access, Matrix);
+            Border_Color := Video.From_TED (Machine.IO_Peek (16#FF19#));
+            Background_Color := Video.From_TED (Machine.IO_Peek (16#FF15#));
+            Charset_Data.Load_TED_Charset
+              (Machine.TED_Char_Peek'Access, Machine.IO_Peek (16#FF06#),
+               Machine.IO_Peek (16#FF07#), Machine.IO_Peek (16#FF13#));
+            Charset_Data.Multicolour :=
+              (Machine.IO_Peek (16#FF07#) and 16#10#) /= 0;
+            Charset_Data.Background_Color := Background_Color;
+            Charset_Data.Multi_Color_1 :=
+              Video.From_TED (Machine.IO_Peek (16#FF16#));
+            Charset_Data.Multi_Color_2 :=
+              Video.From_TED (Machine.IO_Peek (16#FF17#));
+            Modified := True;
+            Status.Set_Text ("grabbed the screen and its charset; colours " &
+                             "mapped to the nearest C64 ones" &
+                             (if (Machine.IO_Peek (16#FF06#) and 16#20#) /= 0
+                              then " (it is in bitmap mode: only text " &
+                                   "screens make sense here)" else ""));
+         end;
+         return;
+      end if;
       Load_Memory (Machine.VIC_Peek'Access,
                    Word (Shift_Right (D018, 4)) * 16#400#,
                    Machine.IO_Peek'Access, 16#D800#);

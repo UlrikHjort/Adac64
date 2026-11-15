@@ -81,4 +81,16 @@ package Bitmap_Data is
                           IO : not null Reader);
    --  From the running machine (colour RAM through IO at $D800)
 
+   --  C16 / Plus/4 (TED) layout: the bitmap is the same; per cell a hue
+   --  byte (high nibble: the 1 / 01 colour, low: the 0 / 10 colour) and a
+   --  luminance byte (bits 0-2: the 1 / 01 colour, 4-6: the 0 / 10 colour);
+   --  multicolour bit pair 11 is one colour for the whole picture ($FF16)
+   --  where the C64 has one per cell, so the most common one is used
+   type TED_Picture is record
+      Hues, Lums : Byte_Array (0 .. 999);
+      BG0, BG1 : Byte;          --  $FF15 (background), $FF16 (pair 11)
+   end record;
+   function To_TED return TED_Picture;
+   procedure From_TED (P : TED_Picture);   --  sets Screen, Colors, Background
+
 end Bitmap_Data;

@@ -135,15 +135,53 @@ package body Charset_Editor is
       end loop;
    end Send_Glyph;
 
+   function Is_TED return Boolean is
+     (Machine.Model in Machine.Plus4 | Machine.C16);
+
+   --  C16 / Plus/4: the charset into RAM at $3000 for the TED ($FF12 bit 2
+   --  = RAM, $FF13 = $30), the colours mapped to the nearest TED colours
+   procedure Send_To_TED (Quiet : Boolean) is
+      Matrix : constant Word :=
+        Word (Machine.IO_Peek (16#FF14#) and 16#F8#) * 256;
+      FF07 : constant Byte := Machine.IO_Peek (16#FF07#);
+   begin
+      for C in Char_Code loop
+         Send_Glyph (C);
+      end loop;
+      Machine.Monitor_Poke (16#FF12#, Machine.IO_Peek (16#FF12#) and 16#3B#);
+      Machine.Monitor_Poke (16#FF13#,
+                            16#30# or (Machine.IO_Peek (16#FF13#) and 2));
+      Machine.Monitor_Poke
+        (16#FF07#, (if Multicolour then FF07 or 16#90# else FF07 or 16#80#)
+                     and (if Multicolour then 16#FF# else 16#EF#));
+      Machine.Monitor_Poke (16#FF15#, Video.To_TED (Background_Color));
+      Machine.Monitor_Poke (16#FF16#, Video.To_TED (Multi_Color_1));
+      Machine.Monitor_Poke (16#FF17#, Video.To_TED (Multi_Color_2));
+      for I in 0 .. 999 loop
+         Machine.Poke
+           (Matrix + Word (I),
+            (if Multicolour then (Video.To_TED (Text_Color and 7) and 16#77#)
+                                 or 8
+             else Video.To_TED (Text_Color)));
+      end loop;
+      if not Quiet then
+         Status.Set_Text ("the emulator's screen now uses this charset " &
+                          "(at $3000: $FF12 bit 2 = 0, $FF13 = $30; " &
+                          "256 characters)");
+      end if;
+   end Send_To_TED;
+
    procedure Send_To_Emulator (Quiet : Boolean := False) is
       D016 : constant Byte := Machine.IO_Peek (16#D016#);
    begin
+      if Is_TED then
+         Send_To_TED (Quiet);
+         return;
+      end if;
       if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the " & (if Machine.Model = Machine.VIC20
-                                       then "VIC-20" else "C16 / Plus/4")
-                             & " has no VIC-II: this editor works with "
-                             & "the C64 and C128");
+            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works "
+                             & "with the C64, C128, C16 and Plus/4");
          end if;
          return;
       end if;
@@ -181,6 +219,30 @@ package body Charset_Editor is
       Offset : constant Word :=
         Word (Machine.IO_Peek (16#D018#) and 16#0E#) * 16#400#;
    begin
+      if Is_TED then
+         declare
+            Base : constant Word :=
+              Word (Machine.IO_Peek (16#FF13#) and 16#F8#) * 256;
+         begin
+            Load_TED_Charset (Machine.TED_Char_Peek'Access,
+                              Machine.IO_Peek (16#FF06#),
+                              Machine.IO_Peek (16#FF07#),
+                              Machine.IO_Peek (16#FF13#));
+            Multicolour := (Machine.IO_Peek (16#FF07#) and 16#10#) /= 0;
+            Background_Color := Video.From_TED (Machine.IO_Peek (16#FF15#));
+            Multi_Color_1 := Video.From_TED (Machine.IO_Peek (16#FF16#));
+            Multi_Color_2 := Video.From_TED (Machine.IO_Peek (16#FF17#));
+            Modified := True;
+            Undo_Count := 0;
+            Status.Set_Text ("grabbed the charset at $" &
+                             Hex2 (Natural (Base) / 256) & "00" &
+                             (if (Machine.IO_Peek (16#FF12#) and 4) /= 0
+                              then " (ROM)" else "") &
+                             (if Multicolour then " (multicolour)" else "") &
+                             "; colours mapped to the nearest C64 ones");
+         end;
+         return;
+      end if;
       Load_Memory (Machine.VIC_Peek'Access, Offset);
       Multicolour := (Machine.IO_Peek (16#D016#) and 16#10#) /= 0;
       Background_Color := Machine.IO_Peek (16#D021#) and 15;

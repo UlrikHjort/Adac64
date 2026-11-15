@@ -259,4 +259,24 @@ package body Charset_Data is
       Used := 256;
    end Load_Memory;
 
+   procedure Load_TED_Charset (Read : not null Reader;
+                               FF06, FF07, FF13 : Byte) is
+      Full : constant Boolean :=           --  256 characters or ECM
+        (FF07 and 16#80#) /= 0 or else (FF06 and 16#40#) /= 0;
+      Base : constant Word :=
+        Word (FF13 and (if Full then 16#F8# else 16#FC#)) * 256;
+   begin
+      Load_Memory (Read, Base);
+      if not Full then
+         for C in Char_Code range 128 .. 255 loop
+            declare
+               G : Glyph := Get (C - 128);
+            begin
+               Invert (G);
+               Put (C, G);
+            end;
+         end loop;
+      end if;
+   end Load_TED_Charset;
+
 end Charset_Data;

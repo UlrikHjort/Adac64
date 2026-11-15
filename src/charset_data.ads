@@ -72,4 +72,10 @@ package Charset_Data is
    procedure Load_Memory (Read : not null Reader; Addr : Word);
    --  All 256 characters from 2048 bytes at Addr
 
+   procedure Load_TED_Charset (Read : not null Reader;
+                               FF06, FF07, FF13 : Byte);
+   --  The C16 / Plus/4's character set as its TED registers select it
+   --  (Read gives ROM or RAM as $FF12 bit 2 says); with 128 characters,
+   --  128-255 are the TED's reversed copies of 0-127
+
 end Charset_Data;

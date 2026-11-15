@@ -35,6 +35,7 @@ with Interfaces; use Interfaces;
 with Machine;
 with Charset_Data; use Charset_Data;
 with Asm;
+with Video;
 
 procedure Charset_Test is
    Failures : Natural := 0;
@@ -122,6 +123,27 @@ begin
       Check (not Asm.Has_Errors and then Same
              and then Asm.High_Address = 16#37FF#,
              "exported source assembles to the same 2048 bytes");
+   end;
+
+   --  C16 / Plus/4: colours to the TED and back, and the TED's 128-char
+   --  mode (characters 128-255 are reversed copies)
+   Check ((for all C in Byte range 0 .. 15 =>
+             Video.From_TED (Video.To_TED (C)) = C),
+          "every C64 colour maps to a TED colour and back");
+   declare
+      TED_Mem : Byte_Array (0 .. 16#FFFF#) := (others => 0);
+      function Rd (A : Word) return Byte is (TED_Mem (Natural (A)));
+   begin
+      for I in 0 .. 1023 loop
+         TED_Mem (16#3000# + I) := Byte (I mod 251);
+      end loop;
+      Load_TED_Charset (Rd'Unrestricted_Access, 16#1B#, 16#08#, 16#30#);
+      Check (Get (5) (3) = Byte ((5 * 8 + 3) mod 251)
+             and then Get (128 + 5) (3) = not Byte ((5 * 8 + 3) mod 251),
+             "TED charset: 128 characters, 128-255 reversed");
+      Load_TED_Charset (Rd'Unrestricted_Access, 16#1B#, 16#88#, 16#30#);
+      Check (Get (128 + 5) (3) = TED_Mem (16#3000# + 16#400# + 5 * 8 + 3),
+             "TED charset: 256 characters");
    end;
 
    if Failures > 0 then

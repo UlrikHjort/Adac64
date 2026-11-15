@@ -188,8 +188,7 @@ files of the generic type (C1 / C2, low / high ROMs) and raw `.bin` /
 them at reset. Plus/4 demos and games from the scene archives (disk, tape
 and single files) run as in VICE.
 
-Not there yet: the 1551 drive, the ACIA (RS-232), saving to tape, and
-Forge's graphics editors (they are made for the VIC-II).
+Not there yet: the 1551 drive, the ACIA (RS-232) and saving to tape.
 
 ### Drive 8
 
@@ -490,6 +489,22 @@ the 8502 (not on the Z80). The editors' *Show in emulator* sets GRAPHM
 (`$D8`) to `$FF` first, so the C128 KERNAL stops rewriting the VIC
 registers every frame; sprites are shown from `$0E00`. The 80-column VDC
 screen is not covered by the editors.
+
+### Forge on the C16 and Plus/4
+
+Forge works with them too (`bin/adac64-forge --plus4`): BASIC tabs are
+tokenized as BASIC 3.5 at `$1001`, new assembly programs start there, and
+the assembler, debugger and BASIC line tracking work as on the C64. The
+charset, screen and bitmap editors keep their C64 colours and send to and
+grab from the TED: colours go to the TED colour of the same hue with the
+closest brightness (and back); the charset goes to `$3000` in RAM
+(`$FF12` / `$FF13`); screens to the TED's character and attribute
+matrices; pictures to `$2000` with their colours at `$1800` / `$1C00` (as
+BASIC 3.5 keeps them). Hires pictures convert exactly; in multicolour the
+TED has one colour for bit pair 11 instead of one per cell, so the most
+common one is used. `tests/bitmap_test` checks both modes pixel by pixel
+on the emulated Plus/4. The sprite editor stays with the C64 and C128 (the
+TED has no sprites).
 
 ## Keys
 

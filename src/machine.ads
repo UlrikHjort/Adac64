@@ -97,6 +97,13 @@ package Machine is
    function IO_Peek (Addr : Word) return Byte;
    --  VIC-II / colour RAM / CIA register at $D000-$DFFF, whatever is
    --  banked in for the CPU (no side effects).
+   --  The C16 / Plus/4's video memory, for the graphics editors
+   function TED_RAM_Peek (Addr : Word) return Byte;
+   function TED_Color_Peek (Addr : Word) return Byte;
+   --  An attribute byte at Addr as the nearest VIC-II colour (0 .. 15)
+   function TED_Char_Peek (Addr : Word) return Byte;
+   --  Character data as the TED fetches it (ROM when $FF12 bit 2 is set)
+
    function Get_PC return Word;
    function Screen_Contains (Text : String) return Boolean;
    --  True when Text (ASCII) is visible on the 40- or 80-column screen.

@@ -556,4 +556,46 @@ package body Bitmap_Data is
       Mode := (if (IO (16#D016#) and 16#10#) /= 0 then Multicolour else Hires);
    end Load_Memory;
 
+   function To_TED return TED_Picture is
+      P : TED_Picture;
+      Count : array (Byte range 0 .. 15) of Natural := (others => 0);
+      Common : Byte := 0;
+   begin
+      for I in Screen'Range loop
+         declare
+            C1 : constant Byte := Video.To_TED (Shift_Right (Screen (I), 4));
+            C0 : constant Byte := Video.To_TED (Screen (I) and 15);
+         begin
+            P.Hues (I) := Shift_Left (C1 and 15, 4) or (C0 and 15);
+            P.Lums (I) := Shift_Right (C1, 4) or (C0 and 16#70#);
+         end;
+         Count (Colors (I) and 15) := Count (Colors (I) and 15) + 1;
+      end loop;
+      for C in Count'Range loop
+         if Count (C) > Count (Common) then
+            Common := C;
+         end if;
+      end loop;
+      P.BG0 := Video.To_TED (Background);
+      P.BG1 := Video.To_TED (Common);
+      return P;
+   end To_TED;
+
+   procedure From_TED (P : TED_Picture) is
+   begin
+      for I in Screen'Range loop
+         declare
+            V : constant Byte := P.Hues (I);
+            C : constant Byte := P.Lums (I);
+            C1 : constant Byte := Shift_Right (V, 4) or Shift_Left (C and 7, 4);
+            C0 : constant Byte := (V and 15) or (C and 16#70#);
+         begin
+            Screen (I) := Shift_Left (Video.From_TED (C1), 4)
+              or Video.From_TED (C0);
+            Colors (I) := Video.From_TED (P.BG1);
+         end;
+      end loop;
+      Background := Video.From_TED (P.BG0);
+   end From_TED;
+
 end Bitmap_Data;

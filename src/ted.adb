@@ -29,41 +29,8 @@ with SID; use type SID.Sink_Proc;
 
 package body TED is
 
-   --  Colours: bits 0-3 hue, bits 4-6 luminance (as VICE shows them)
-   type TED_Palette is array (Byte range 0 .. 127) of Pixel;
-   Palette : constant TED_Palette :=
-     (16#000000#, 16#313131#, 16#740d00#, 16#004e56#,
-      16#6c0081#, 16#006000#, 16#2312bb#, 16#3d4b00#,
-      16#6a2300#, 16#573900#, 16#1e5800#, 16#75004c#,
-      16#005a10#, 16#0029aa#, 16#4200bb#, 16#005f00#,
-      16#000000#, 16#444444#, 16#83251b#, 16#005f66#,
-      16#7c0b90#, 16#007000#, 16#3729c9#, 16#4f5c00#,
-      16#7a3700#, 16#674b00#, 16#336800#, 16#84155d#,
-      16#006a27#, 16#1a3cb8#, 16#5318c8#, 16#146f00#,
-      16#000000#, 16#565656#, 16#923930#, 16#036f76#,
-      16#8b239f#, 16#127f00#, 16#4a3cd6#, 16#606c00#,
-      16#894a00#, 16#775c00#, 16#457800#, 16#932b6d#,
-      16#007a3b#, 16#2f4ec6#, 16#642ed5#, 16#2a7e00#,
-      16#000000#, 16#666666#, 16#a04b43#, 16#1e7e85#,
-      16#9937ad#, 16#298e07#, 16#5b4ee3#, 16#707c00#,
-      16#985b00#, 16#866c00#, 16#578700#, 16#a13e7d#,
-      16#1c894d#, 16#425fd3#, 16#7441e3#, 16#3d8d00#,
-      16#000000#, 16#8d8d8d#, 16#c3746d#, 16#4ea3a9#,
-      16#bc63cf#, 16#57b23e#, 16#8277ff#, 16#96a000#,
-      16#bb8236#, 16#aa9200#, 16#7eab00#, 16#c469a1#,
-      16#4dad76#, 16#6c86f3#, 16#996bff#, 16#68b105#,
-      16#000000#, 16#a2a2a2#, 16#d78b84#, 16#67b8be#,
-      16#d17be3#, 16#6fc759#, 16#988dff#, 16#abb505#,
-      16#cf9851#, 16#bfa825#, 16#95c007#, 16#d880b6#,
-      16#66c18d#, 16#839cff#, 16#af82ff#, 16#7fc62a#,
-      16#000000#, 16#cccccc#, 16#feb5af#, 16#95e0e6#,
-      16#f7a7ff#, 16#9cee88#, 16#c2b8ff#, 16#d4de46#,
-      16#f6c281#, 16#e7d15c#, 16#bfe748#, 16#ffacdf#,
-      16#94e9b7#, 16#afc6ff#, 16#d7aeff#, 16#abed60#,
-      16#000000#, 16#ffffff#, 16#ffebe5#, 16#ccffff#,
-      16#ffddff#, 16#d3ffc1#, 16#f7edff#, 16#ffff87#,
-      16#fff7bb#, 16#ffff99#, 16#f3ff88#, 16#ffe2ff#,
-      16#ccffec#, 16#e4faff#, 16#ffe3ff#, 16#e1ff9d#);
+   --  Colours: bits 0-3 hue, bits 4-6 luminance (Video.TED_Palette)
+   function Palette (C : Byte) return Pixel is (Video.TED_Palette (C));
 
    type Reg_Array is array (0 .. 63) of Byte;
    Regs : Reg_Array := (others => 0);

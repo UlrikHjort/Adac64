@@ -34,6 +34,7 @@ with Keyboard;
 with Paddles;
 with Media;
 with Disasm;
+with Video;
 with Tape;
 with Drive1541;
 use type Media.Media_Kind;
@@ -330,6 +331,13 @@ package body Machine is
    function RAM_Peek (Addr : Word) return Byte is (Mem (Natural (Addr)));
 
    function VIC_Peek (Addr : Word) return Byte is (C64S.VIC_Peek (Addr));
+
+   function TED_RAM_Peek (Addr : Word) return Byte is (P4S.RAM_Read (Addr));
+   function TED_Color_Peek (Addr : Word) return Byte is
+     (Video.From_TED (P4S.RAM_Read (Addr) and 16#7F#));
+   function TED_Char_Peek (Addr : Word) return Byte is
+     (if (P4S.IO_Peek (16#FF12#) and 4) /= 0 and then Addr >= 16#8000#
+      then P4S.ROM_Peek (Addr) else P4S.RAM_Read (Addr));
    function VIC_Bank_Address return Word is (C64S.VIC_Bank_Address);
    function Char_ROM_Peek (Offset : Natural) return Byte is
      (C64S.Char_ROM_Peek (Offset));

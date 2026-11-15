@@ -170,14 +170,85 @@ package body Bitmap_Editor is
    --  Emulator link
    ---------------------------------------------------------------------
 
+   function Is_TED return Boolean is
+     (Machine.Model in Machine.Plus4 | Machine.C16);
+
+   --  C16 / Plus/4: bitmap at $2000, luminances at $1800 and hues at $1C00
+   --  (as BASIC 3.5's GRAPHIC modes keep them). Hires converts exactly; in
+   --  multicolour the TED has one colour for bit pair 11 ($FF16) where the
+   --  C64 has one per cell, so the most common one is used
+   procedure Send_To_TED (Quiet : Boolean) is
+      P : constant TED_Picture := To_TED;
+   begin
+      for I in Bitmap'Range loop
+         Machine.Poke (16#2000# + Word (I), Bitmap (I));
+      end loop;
+      for I in Screen'Range loop
+         Machine.Poke (16#1C00# + Word (I), P.Hues (I));
+         Machine.Poke (16#1800# + Word (I), P.Lums (I));
+      end loop;
+      Machine.Monitor_Poke (16#FF06#, 16#3B#);     --  bitmap, 25 rows
+      Machine.Monitor_Poke
+        (16#FF07#, (if Mode = Multicolour then 16#18# else 16#08#));
+      Machine.Monitor_Poke
+        (16#FF12#, (Machine.IO_Peek (16#FF12#) and 16#C3#) or 16#08#);
+      Machine.Monitor_Poke (16#FF14#, 16#18#);
+      Machine.Monitor_Poke (16#FF15#, P.BG0);
+      Machine.Monitor_Poke (16#FF16#, P.BG1);
+      Machine.Monitor_Poke (16#FF19#, Video.To_TED (Border));
+      if not Quiet then
+         Status.Set_Text
+           ("the emulator shows the picture (bitmap $2000, colours $1800 / " &
+            "$1C00" & (if Mode = Multicolour
+                       then "; bit pair 11 is one colour on the TED" else "")
+            & "); RUN/STOP + RESTORE gets the text screen back");
+      end if;
+   end Send_To_TED;
+
+   procedure Grab_From_TED is
+      FF06 : constant Byte := Machine.IO_Peek (16#FF06#);
+      Bitmap_At : constant Word :=
+        Word (Machine.IO_Peek (16#FF12#) and 16#38#) * 1024;
+      Matrix : constant Word :=
+        Word (Machine.IO_Peek (16#FF14#) and 16#F8#) * 256;
+   begin
+      if (FF06 and 16#20#) = 0 then
+         Status.Set_Text ("the emulator is not in bitmap mode ($FF06 bit 5)");
+         return;
+      end if;
+      Mode := (if (Machine.IO_Peek (16#FF07#) and 16#10#) /= 0
+               then Multicolour else Hires);
+      for I in Bitmap'Range loop
+         Bitmap (I) := Machine.TED_RAM_Peek (Bitmap_At + Word (I));
+      end loop;
+      declare
+         P : TED_Picture;
+      begin
+         for I in Screen'Range loop
+            P.Hues (I) := Machine.TED_RAM_Peek (Matrix + 16#400# + Word (I));
+            P.Lums (I) := Machine.TED_RAM_Peek (Matrix + Word (I));
+         end loop;
+         P.BG0 := Machine.IO_Peek (16#FF15#);
+         P.BG1 := Machine.IO_Peek (16#FF16#);
+         From_TED (P);
+      end;
+      Border := Video.From_TED (Machine.IO_Peek (16#FF19#));
+      Modified := True;
+      Status.Set_Text ("grabbed a " & (if Mode = Hires then "hires" else
+                       "multicolour") & " picture; colours mapped to the " &
+                       "nearest C64 ones");
+   end Grab_From_TED;
+
    procedure Send_To_Emulator (Quiet : Boolean := False) is
    begin
+      if Is_TED then
+         Send_To_TED (Quiet);
+         return;
+      end if;
       if Machine.Model not in Machine.C64 | Machine.C128 then
          if not Quiet then
-            Status.Set_Text ("the " & (if Machine.Model = Machine.VIC20
-                                       then "VIC-20" else "C16 / Plus/4")
-                             & " has no VIC-II: this editor works with "
-                             & "the C64 and C128");
+            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works "
+                             & "with the C64, C128, C16 and Plus/4");
          end if;
          return;
       end if;
@@ -213,6 +284,10 @@ package body Bitmap_Editor is
       D011 : constant Byte := Machine.IO_Peek (16#D011#);
       D018 : constant Byte := Machine.IO_Peek (16#D018#);
    begin
+      if Is_TED then
+         Grab_From_TED;
+         return;
+      end if;
       if (D011 and 16#20#) = 0 then
          Status.Set_Text ("the emulator is not in bitmap mode ($D011 bit 5)");
          return;

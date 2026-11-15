@@ -72,6 +72,8 @@ package body Machine.Plus4_System is
       then Mem (Lo_Banks (ROM_Cfg mod 4) + Natural (Addr - 16#8000#))
       else Mem (Hi_Banks (ROM_Cfg / 4) + Natural (Addr - 16#C000#)));
 
+   function ROM_Peek (Addr : Word) return Byte is (ROM_Byte (Addr));
+
    --  The TED's memory: RAM, or ROM (as banked for the CPU) when it fetches
    --  from ROM in the upper half
    function TED_Fetch (Addr : Word; ROM : Boolean) return Byte is
