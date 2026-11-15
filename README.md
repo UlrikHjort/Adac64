@@ -237,7 +237,8 @@ key). Autostarting a boot disk runs in warp until the drive is quiet, so the
 Machine → Save/Load snapshot saves the complete state (computer, 1541 with
 its disk surface, cartridge) to a file; Shift+F9 / Shift+F10 quick-save and
 quick-load `~/.local/share/adac64/quick.a64s`. The attached disk image is
-re-attached by path when loading.
+re-attached by path when loading. Snapshots from an older AdaC64 version
+may not load in a newer one.
 
 ### Monitor
 
@@ -482,7 +483,11 @@ Disk images can also be dropped onto the window.
     src/vic_ii.*     VIC-II        src/sid.*      SID
     src/vic_i.*      VIC-20 VIC (6560/6561) with its sound
     src/cia.*        CIA           src/vdc.*      VDC
-    src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop
+    src/machine.*    the machine's interface: run loop, KERNAL traps,
+                     autostart, debugger, snapshots
+    src/machine-core.*         memory, page maps, 6502 bus, timing
+    src/machine-c64_system.*   C64 / C128: maps, I/O, MMU, Z80, REU, .crt
+    src/machine-vic20_system.* VIC-20: map, VIAs, RAM expansion, cartridges
     src/crt.*        CRT cartridge files
     src/reu.*        RAM Expansion Unit
     src/tape.*       Datasette / TAP images
