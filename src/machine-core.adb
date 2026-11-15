@@ -137,9 +137,11 @@ package body Machine.Core is
          Check_Watch (Addr, False);
       end if;
       if Addr < 2 and then Has_CPU_Port then
-         return (if Current_Model in Plus4 | C16
-                 then Plus4_System.Port_Read (Addr)
-                 else C64_System.Port_Read (Addr));
+         if Current_Model in Plus4 | C16 then
+            Catch_Up;          --  the tape and serial lines at this cycle
+            return Plus4_System.Port_Read (Addr);
+         end if;
+         return C64_System.Port_Read (Addr);
       end if;
       if Page = 16#FF# and then not C64_Mode and then Addr <= 16#FF04# then
          return C64_System.MMU_Read (Natural (Addr - 16#FF00#));
@@ -160,6 +162,7 @@ package body Machine.Core is
       end if;
       if Addr < 2 and then Has_CPU_Port then
          if Current_Model in Plus4 | C16 then
+            Catch_Up;
             Plus4_System.Port_Write (Addr, Value);
          else
             C64_System.Port_Write (Addr, Value);

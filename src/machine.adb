@@ -26,6 +26,7 @@
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Directories;
+with Ada.Characters.Handling;
 with Ada.Command_Line;
 with Interfaces; use Interfaces;
 
@@ -134,10 +135,7 @@ package body Machine is
       case Current_Model is
          when VIC20 => V20S.Attach_Cartridge (Path, Ok);
          when C64 | C128 => C64S.Attach_Cartridge (Path, Ok);
-         when Plus4 | C16 =>
-            Ok := False;
-            Err := To_Unbounded_String
-              ("cartridges are not supported on the Plus/4 and C16 yet");
+         when Plus4 | C16 => P4S.Attach_Cartridge (Path, Ok);
       end case;
    end Attach_Cartridge;
 
@@ -145,6 +143,7 @@ package body Machine is
    begin
       V20S.Detach_Cartridge;
       C64S.Detach_Cartridge;
+      P4S.Detach_Cartridge;
       Reset;
    end Detach_Cartridge;
 
@@ -152,7 +151,7 @@ package body Machine is
      (case Current_Model is
          when VIC20 => V20S.Cartridge_Name,
          when C64 | C128 => C64S.Cartridge_Name,
-         when Plus4 | C16 => "");
+         when Plus4 | C16 => P4S.Cartridge_Name);
 
    procedure Detach is
    begin
@@ -382,6 +381,10 @@ package body Machine is
       Verify : constant Boolean := CPU.A /= 0;
       Data : Byte_Array_Access;
       Found : Boolean;
+      --  The KERNAL's STOP vector: the load loop calls it after every
+      --  byte, and autostarting loaders overwrite it to take over in the
+      --  middle of the LOAD (and read the rest of the file themselves)
+      Stop_Vec : constant Natural := (if Is_TED then 16#0326# else 16#0328#);
    begin
       if Dev = 1 then
          if Media.Kind not in Media.T64 | Media.PRG then
@@ -422,6 +425,13 @@ package body Machine is
          End_Addr : constant Natural :=
            (Load_Addr + Data'Length - 2) mod 16#10000#;
       begin
+         if Drive_On and then Load_Addr <= Stop_Vec + 1
+           and then Load_Addr + Data'Length - 2 > Stop_Vec
+         then
+            --  an autostarting loader: the real LOAD through the drive
+            Free (Data);
+            return;
+         end if;
          if not Verify then
             for I in 2 .. Data'Last loop
                if Current_Model in VIC20 | Plus4 | C16 then
@@ -588,7 +598,12 @@ package body Machine is
          Attach_Cartridge (Path, Ok);
          return;
       end if;
-      if Current_Model = VIC20 and then V20S.Is_Cartridge (Path) then
+      if (Current_Model = VIC20 and then V20S.Is_Cartridge (Path))
+        or else (Is_TED and then Path'Length > 4
+                 and then Ada.Characters.Handling.To_Lower
+                            (Path (Path'Last - 3 .. Path'Last))
+                          in ".bin" | ".rom")
+      then
          Type_Queue := Null_Unbounded_String;
          Auto := Idle;
          Attach_Cartridge (Path, Ok);

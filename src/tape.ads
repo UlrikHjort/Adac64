@@ -25,8 +25,12 @@
 
 --  Datasette with TAP (raw pulse) images.
 --
---  The read signal goes to CIA1's FLAG input; the CPU port supplies the
---  motor control (bit 5, active low) and reads the PLAY sense (bit 4).
+--  C64 / VIC-20: the read signal goes to CIA1's FLAG input (VIA2 CA1 on the
+--  VIC-20); the CPU port supplies the motor control (bit 5, active low)
+--  and reads the PLAY sense (bit 4).
+--  C16 / Plus/4 ("C16-TAPE-RAW" images): the read line is a level on CPU
+--  port bit 4 (Tick_Level / Level); version 2 images store half-waves,
+--  version 1 full waves, in single-clock (886 kHz) units.
 
 with Ada.Streams;
 
@@ -47,6 +51,12 @@ package Tape is
    procedure Tick (Cycles : Natural; Pulse : out Natural);
    --  Advance the tape; Pulse = number of read pulses (falling edges on
    --  the FLAG line) that happened.
+
+   function Is_C16 return Boolean;   --  a C16 / Plus/4 image
+
+   procedure Tick_Level (Cycles : Natural);
+   --  C16 / Plus/4: advance the tape by Cycles TED double-clock cycles
+   function Level return Boolean;     --  the read line
 
    function Counter return Natural;
    --  position in percent

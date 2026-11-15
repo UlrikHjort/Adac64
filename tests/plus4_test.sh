@@ -2,7 +2,7 @@
 # C16 / Plus/4 test: the boot screens, the keyboard matrix, CPU timing
 # (loop iterations per frame with the screen on, off and in single clock,
 # as measured in VICE), loading through fast load and the emulated 1541,
-# and snapshots. Skipped when the Plus/4 ROMs are not installed.
+# cartridges and snapshots. Skipped when the Plus/4 ROMs are not installed.
 B=bin/adac64
 [ -f roms/plus4/basic-318006-01.bin ] || { echo "plus4: ROMs not installed, skipped"; exit 0; }
 set -e
@@ -50,6 +50,22 @@ timing() {   # name, options...
 }
 timing "fast load" --headless 600 --png $T/s.png $T/t.prg
 timing "1541 drive" --headless 3000 --png $T/s.png --no-fast-load $T/t.d64
+# cartridges: the KERNAL starts a 16K C1 image ("CBM" at $8007); the test
+# cartridge sets $ff19 = $2e and counts in $fb
+$B --asm tests/plus4_cart.asm -o $T/c.prg >/dev/null
+tail -c +3 $T/c.prg > $T/c.bin
+cart() {   # name, file, options
+  N=$1; F=$2; shift 2
+  R=$($B "$@" --headless 200 --png $T/s.png --monitor "m ff19 ff19" "$F" | grep '^FF19' | cut -c7-8)
+  [ "$R" = "2E" ] || fail "cartridge $N (\$ff19 = $R)"
+  echo "plus4: cartridge $N started"
+}
+cart "raw .bin (Plus/4)" $T/c.bin --plus4
+cart "raw .bin (C16)" $T/c.bin --c16
+if command -v cartconv >/dev/null; then
+  cartconv -t plus4 -i $T/c.bin -o $T/c.crt >/dev/null 2>&1
+  cart "VICE .crt" $T/c.crt --plus4
+fi
 # snapshots: 300 frames + snapshot + 600 frames = 900 frames straight
 $B --plus4 --headless 900 --png $T/a.png $T/t.prg >/dev/null
 $B --plus4 --headless 300 --png $T/s.png --save-snapshot $T/p.snap $T/t.prg >/dev/null

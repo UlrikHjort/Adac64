@@ -60,6 +60,12 @@ private package Machine.Plus4_System is
    procedure Clear_Frame;
    procedure End_Of_Frame;
 
+   procedure Attach_Cartridge (Path : String; Ok : out Boolean);
+   --  VICE .crt ("PLUS4 CARTRIDGE", generic: C1 / C2, low / high, 4K-16K
+   --  chips) or a raw image: 16K = C1 low, 32K = C1 low + high
+   procedure Detach_Cartridge;
+   function Cartridge_Name return String;
+
    function Screen_Byte (I : Natural) return Byte;
    function Beam_Text return String;
 

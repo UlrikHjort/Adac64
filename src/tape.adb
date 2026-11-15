@@ -38,6 +38,9 @@ package body Tape is
    Left    : Integer := 0;          --  cycles until the current pulse ends
    Pressed : Boolean := False;
    Label   : Unbounded_String;
+   C16     : Boolean := False;      --  "C16-TAPE-RAW"
+   Read_Level : Boolean := False;
+   Second_Half : Integer := 0;      --  version 1: the other half-wave
 
    procedure Free is new Ada.Unchecked_Deallocation
      (Byte_Array, Byte_Array_Access);
@@ -48,6 +51,7 @@ package body Tape is
       use Ada.Streams.Stream_IO;
       F : File_Type;
       Sig : constant String := "C64-TAPE-RAW";
+      Sig16 : constant String := "C16-TAPE-RAW";
    begin
       Ok := False;
       Detach;
@@ -59,8 +63,12 @@ package body Tape is
          Detach;
          return;
       end if;
+      C16 := True;
+      for I in Sig16'Range loop
+         C16 := C16 and then Data (I - 1) = Character'Pos (Sig16 (I));
+      end loop;
       for I in Sig'Range loop
-         if Data (I - 1) /= Character'Pos (Sig (I)) then
+         if not C16 and then Data (I - 1) /= Character'Pos (Sig (I)) then
             Detach;
             return;
          end if;
@@ -103,7 +111,12 @@ package body Tape is
    begin
       Pos := Header;
       Left := 0;
+      Second_Half := 0;
+      Read_Level := True;
    end Rewind;
+
+   function Is_C16 return Boolean is (Data /= null and then C16);
+   function Level return Boolean is (Read_Level);
 
    function Counter return Natural is
      (if Data = null or else Data'Length <= Header then 0
@@ -157,6 +170,38 @@ package body Tape is
       end loop;
    end Tick;
 
+   procedure Tick_Level (Cycles : Natural) is
+   begin
+      if Data = null or else not Pressed or else not Motor then
+         return;
+      end if;
+      Left := Left - Cycles;
+      while Left <= 0 loop
+         declare
+            L : Integer;
+         begin
+            if Second_Half > 0 then
+               L := Second_Half;
+               Second_Half := 0;
+            else
+               L := Next_Pulse;
+               if L < 0 then
+                  Pressed := False;        --  end of tape: STOP
+                  Left := 0;
+                  return;
+               end if;
+               if Version >= 2 then
+                  L := L * 2;              --  a half-wave (886 kHz units)
+               else
+                  Second_Half := L;        --  a full wave: two halves
+               end if;
+            end if;
+            Read_Level := not Read_Level;
+            Left := Left + Integer'Max (L, 1);
+         end;
+      end loop;
+   end Tick_Level;
+
    procedure Save_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
    is
    begin
@@ -164,6 +209,8 @@ package body Tape is
       Integer'Write (S, Left);
       Boolean'Write (S, Pressed);
       Boolean'Write (S, Motor);
+      Boolean'Write (S, Read_Level);
+      Integer'Write (S, Second_Half);
    end Save_State;
 
    procedure Load_State (S : not null access Ada.Streams.Root_Stream_Type'Class)
@@ -173,6 +220,8 @@ package body Tape is
       Integer'Read (S, Left);
       Boolean'Read (S, Pressed);
       Boolean'Read (S, Motor);
+      Boolean'Read (S, Read_Level);
+      Integer'Read (S, Second_Half);
       if Data = null then
          Pressed := False;
          Pos := Header;

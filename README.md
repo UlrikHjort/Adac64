@@ -177,9 +177,19 @@ keys, F1-F3, F7 = HELP, Tab = ESC, Esc = RUN/STOP).
 The boot screens, the 121 colours, the graphics and text modes, the CPU
 speed in each part of the screen and the sound pitch were compared with
 VICE's xplus4 and are identical; `tests/plus4_test.sh` checks boot,
-keyboard, timing, both kinds of loading and snapshots. Not there yet:
-tape, cartridges, the 1551 drive and the ACIA (RS-232), and Forge's
-graphics editors (they are made for the VIC-II).
+keyboard, timing, both kinds of loading, cartridges and snapshots.
+
+Tapes: `.tap` images made for the C16 / Plus/4 ("C16-TAPE-RAW", half- or
+full-wave) play into the CPU port as on the real machine, so the KERNAL
+and turbo loaders read them (open one, or autostart it: LOAD + RUN).
+Cartridges (File → Insert cartridge, or autostart the file): VICE `.crt`
+files of the generic type (C1 / C2, low / high ROMs) and raw `.bin` /
+`.rom` images (16K = C1 low, 32K = C1 low and high); the KERNAL starts
+them at reset. Plus/4 demos and games from the scene archives (disk, tape
+and single files) run as in VICE.
+
+Not there yet: the 1551 drive, the ACIA (RS-232), saving to tape, and
+Forge's graphics editors (they are made for the VIC-II).
 
 ### Drive 8
 
@@ -211,8 +221,10 @@ active, KERNAL `LOAD`s from drive 8 are served instantly from the image and
 written straight into RAM, like a fast-load cartridge, so "one-filer" cracks
 that load under the I/O area work. G64 images are decoded to sectors for
 this; a file touching a sector that does not decode cleanly falls back to the
-emulated 1541. Custom loaders, drive code and SAVE always use the real drive.
-`--no-fast-load` disables it.
+emulated 1541. So does a file that loads over the KERNAL's STOP vector:
+those are autostarting loaders that take over in the middle of the LOAD and
+read the rest of the file themselves. Custom loaders, drive code and SAVE
+always use the real drive. `--no-fast-load` disables it.
 
 **Fast mode** (File menu toggle, `--fast-drive`, or no drive ROM): KERNAL
 `LOAD`/`SAVE` are trapped at `$FFD5`/`$FFD8` and served instantly from D64,

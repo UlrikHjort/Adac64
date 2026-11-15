@@ -129,7 +129,10 @@ package body Machine.Plus4_System is
    end Update_Port;
 
    function Port_Read (Addr : Word) return Byte is
-      Input : Byte := 16#1A#;      --  cassette lines idle
+      --  cassette lines: write (bit 1) and motor sense (bit 3) idle high,
+      --  the read line (bit 4) from the tape
+      Input : Byte :=
+        16#0A# or (if not Tape.Is_C16 or else Tape.Level then 16#10# else 0);
    begin
       if Addr = 0 then
          return Port_DDR;
@@ -256,6 +259,9 @@ package body Machine.Plus4_System is
       for I in 1 .. N loop
          T.Tick;
       end loop;
+      if Tape.Present then
+         Tape.Tick_Level (N);
+      end if;
    end Clock;
 
    procedure Run_CPU (K : Natural) is
@@ -292,6 +298,97 @@ package body Machine.Plus4_System is
 
    function Frame_Rate return Float is
      (Float (T.Clock_Hz) / Float (T.Cycles_Per_Line * T.Lines_Per_Frame));
+
+   ---------------------------------------------------------------------
+   --  Cartridges: C1 low / high at Cart_Base, C2 low / high after them
+   ---------------------------------------------------------------------
+
+   Cart_Name : Unbounded_String;
+
+   --  Copy Data into a 16K cartridge ROM (Slot 0 .. 3 = C1 low, C1 high,
+   --  C2 low, C2 high); smaller chips repeat to fill it
+   procedure Place (Slot : Natural; Data : Byte_Array) is
+      Base : constant Natural := Cart_Base + Slot * 16#4000#;
+   begin
+      for I in 0 .. 16#3FFF# loop
+         Mem (Base + I) := Data (Data'First + I mod Data'Length);
+      end loop;
+   end Place;
+
+   procedure Attach_Cartridge (Path : String; Ok : out Boolean) is
+      D : constant Byte_Array := Read_All (Path, Ok);
+      function BE16 (I : Natural) return Natural is
+        (Natural (D (I)) * 256 + Natural (D (I + 1)));
+      function BE32 (I : Natural) return Natural is
+        (BE16 (I) * 65536 + BE16 (I + 2));
+      Sig : constant String := "PLUS4 CARTRIDGE ";
+      Is_CRT : Boolean := D'Length > 64;
+   begin
+      if not Ok then
+         Err := To_Unbounded_String ("cannot read " & Path);
+         return;
+      end if;
+      Mem (Cart_Base .. Cart_Base + 16#FFFF#) := (others => 16#FF#);
+      for I in Sig'Range loop
+         Is_CRT := Is_CRT
+           and then D (D'First + I - 1) = Character'Pos (Sig (I));
+      end loop;
+      if Is_CRT then
+         if BE16 (D'First + 16#16#) /= 0 then
+            Ok := False;
+            Err := To_Unbounded_String
+              ("only generic Plus/4 cartridges (.crt type 0) are supported");
+            return;
+         end if;
+         declare
+            P : Natural := D'First + BE32 (D'First + 16#10#);
+         begin
+            while P + 16 <= D'Last
+              and then Character'Val (D (P)) = 'C'
+            loop
+               declare
+                  Packet : constant Natural := BE32 (P + 4);
+                  Bank   : constant Natural := BE16 (P + 10);
+                  Start  : constant Natural := BE16 (P + 12);
+                  Len    : constant Natural := BE16 (P + 14);
+               begin
+                  if Bank > 1 or else Start not in 16#8000# | 16#C000#
+                    or else Len not in 16#1000# | 16#2000# | 16#4000#
+                    or else P + 15 + Len > D'Last
+                  then
+                     Ok := False;
+                     Err := To_Unbounded_String
+                       ("unexpected chip in the cartridge file");
+                     return;
+                  end if;
+                  Place (Bank * 2 + (if Start = 16#C000# then 1 else 0),
+                         D (P + 16 .. P + 15 + Len));
+                  exit when Packet = 0;
+                  P := P + Packet;
+               end;
+            end loop;
+         end;
+      elsif D'Length in 16#1000# | 16#2000# | 16#4000# then
+         Place (0, D);
+      elsif D'Length = 16#8000# then
+         Place (0, D (D'First .. D'First + 16#3FFF#));
+         Place (1, D (D'First + 16#4000# .. D'Last));
+      else
+         Ok := False;
+         Err := To_Unbounded_String ("not a Plus/4 cartridge image (size)");
+         return;
+      end if;
+      Cart_Name := To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+      Machine.Reset;          --  the KERNAL starts it ("CBM" at $8007)
+   end Attach_Cartridge;
+
+   procedure Detach_Cartridge is
+   begin
+      Mem (Cart_Base .. Cart_Base + 16#FFFF#) := (others => 16#FF#);
+      Cart_Name := Null_Unbounded_String;
+   end Detach_Cartridge;
+
+   function Cartridge_Name return String is (To_String (Cart_Name));
 
    function Screen_Byte (I : Natural) return Byte is
      (RAM_Read (Word ((Natural (T.Matrix_Base) + 16#400# + I) mod 65536)));
@@ -368,7 +465,9 @@ package body Machine.Plus4_System is
    begin
       ROM_Root := To_Unbounded_String (ROM_Dir);
       Mem (P4_Basic .. P4_FHi + 16#3FFF#) := (others => 16#FF#);
-      Mem (Cart_Base .. Cart_Base + 16#FFFF#) := (others => 16#FF#);
+      if Length (Cart_Name) = 0 then
+         Mem (Cart_Base .. Cart_Base + 16#FFFF#) := (others => 16#FF#);
+      end if;
       if Basic = "" then
          Ok := False;
          Append (Err, "Plus/4 BASIC ROM not found (basic-318006-01.bin in " &

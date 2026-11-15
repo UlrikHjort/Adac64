@@ -432,6 +432,8 @@ package body GUI is
       Path : constant String :=
         Choose_File (if Machine.Model = VIC20
                      then "Insert VIC-20 cartridge (.crt, .prg, .bin, .rom)"
+                     elsif Machine.Model in Plus4 | C16
+                     then "Insert C16 / Plus/4 cartridge (.crt, .bin, .rom)"
                      else "Insert cartridge (.crt)");
       Ok : Boolean;
    begin

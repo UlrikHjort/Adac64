@@ -456,8 +456,11 @@ package body TED is
          return True;                       --  the bad-line DMA
       elsif Bit (Regs (16#13#), 1) then
          return Cyc mod 2 = 0;              --  single clock
-      elsif Fetch_On and then Cyc in 4 .. 100 then
-         return Cyc mod 2 = 0;              --  single clock in the window
+      elsif Fetch_On and then DEN and then Cyc in 4 .. 100 then
+         --  single clock while it fetches the screen (with the screen
+         --  switched off it fetches nothing: the tape routines rely on
+         --  the full speed right after blanking the screen)
+         return Cyc mod 2 = 0;
       else
          return Cyc in 92 | 94 | 96 | 98 | 100;   --  RAM refresh
       end if;
