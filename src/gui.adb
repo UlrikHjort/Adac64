@@ -44,7 +44,7 @@ with SID;
 use type SID.Chip_Model;
 with Blit;
 with Monitor;
-with Studio;
+with Forge;
 with Settings;
 with Tape;
 with Drive1541;
@@ -571,7 +571,7 @@ package body GUI is
 
    procedure Save_Settings is
    begin
-      Studio.Save_State;
+      Forge.Save_State;
       Settings.Set ("sid", (if SID.Model = SID.MOS8580 then "8580" else "6581"));
       Settings.Set ("standard",
                     (if Machine.Standard = Machine.NTSC then "ntsc" else "pal"));
@@ -962,12 +962,12 @@ package body GUI is
       Gtk.Main.Main_Quit;
    end On_Destroy;
 
-   --  In the studio the emulator window only hides; the studio quits
+   --  In the forge the emulator window only hides; the forge quits
    function On_Win_Delete (Self : access Gtk_Widget_Record'Class;
                            Event : Gdk_Event) return Boolean is
       pragma Unreferenced (Self, Event);
    begin
-      if Open_Studio then
+      if Open_Forge then
          Win.Hide;
          return True;
       end if;
@@ -1037,11 +1037,11 @@ package body GUI is
          end;
       end if;
 
-      if Studio.Is_Open then
-         Studio.Tick;
+      if Forge.Is_Open then
+         Forge.Tick;
       end if;
       if Machine.Break_Hit and then not Monitor.Active
-        and then not Studio.Is_Open
+        and then not Forge.Is_Open
       then
          Keyboard.Release_All;
          Refresh_Screen;
@@ -1327,7 +1327,7 @@ package body GUI is
 
       SID.Sink := Audio.Push'Access;
       Monitor.On_Change := Refresh_Screen'Access;
-      Studio.Refresh_Screen := Refresh_Screen'Access;
+      Forge.Refresh_Screen := Refresh_Screen'Access;
       Audio.Start;
 
       Updating_Menu := True;
@@ -1419,10 +1419,10 @@ package body GUI is
       Sync_Menu;
 
       Win.Show_All;
-      if Open_Studio then
-         Win.Set_Title ("AdaC64 (studio)");
-         Studio.Quit_App := Quit_App'Access;
-         Studio.Open (Win, To_String (Studio_File));
+      if Open_Forge then
+         Win.Set_Title ("AdaC64 (forge)");
+         Forge.Quit_App := Quit_App'Access;
+         Forge.Open (Win, To_String (Forge_File));
       end if;
       --  Run below GTK's redraw priority (120), so the window is still
       --  painted and responsive while the emulation runs flat out (warp).

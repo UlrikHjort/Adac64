@@ -57,7 +57,7 @@ with Charset_Editor;
 use type Source_View.Language;
 with Interfaces; use Interfaces;
 
-package body Studio is
+package body Forge is
 
 
    ---------------------------------------------------------------------
@@ -174,7 +174,7 @@ package body Studio is
 
    procedure Update_Title is
    begin
-      Win.Set_Title ("AdaC64 Studio - " &
+      Win.Set_Title ("AdaC64 Forge - " &
                      (if Main_File = Null_Unbounded_String then "no project"
                       else To_String (Main_File)));
       for I in Tabs'Range loop
@@ -349,7 +349,7 @@ package body Studio is
       Filter_Src, Filter_All : Gtk_File_Filter;
       Result : Unbounded_String;
       pragma Unreferenced (W);
-      Last : constant String := Settings.Get ("studio_dir", "");
+      Last : constant String := Settings.Get ("forge_dir", Settings.Get ("studio_dir", ""));
    begin
       Gtk_New (Dlg, Title, Win,
                (if Save then Gtk.File_Chooser.Action_Save
@@ -393,7 +393,7 @@ package body Studio is
       end if;
       if Dlg.Run = Gtk_Response_Accept then
          Result := To_Unbounded_String (Gtk.File_Chooser.Get_Filename (+Dlg));
-         Settings.Set ("studio_dir", Ada.Directories.Containing_Directory
+         Settings.Set ("forge_dir", Ada.Directories.Containing_Directory
                          (To_String (Result)));
       end if;
       Dlg.Destroy;
@@ -509,11 +509,11 @@ package body Studio is
      "loop    inc border" & ASCII.LF &
      "        jmp loop" & ASCII.LF &
      ASCII.LF &
-     "message !scr ""hello from adac64 studio"", 0" & ASCII.LF;
+     "message !scr ""hello from adac64 forge"", 0" & ASCII.LF;
 
    Basic_Template : constant String :=
-     "10 rem adac64 studio - f5 runs this program" & ASCII.LF &
-     "20 print ""{clr}{wht}hello from {yel}adac64{wht} studio""" & ASCII.LF &
+     "10 rem adac64 forge - f5 runs this program" & ASCII.LF &
+     "20 print ""{clr}{wht}hello from {yel}adac64{wht} forge""" & ASCII.LF &
      "30 for i=1 to 15" & ASCII.LF &
      "40 print tab(i);""{lblu}*""" & ASCII.LF &
      "50 for t=1 to 100: next t" & ASCII.LF &
@@ -953,7 +953,7 @@ package body Studio is
       return Length (Names) = 0 or else Confirm_Discard (To_String (Names));
    end Unsaved_Ok;
 
-   procedure Close_Studio is
+   procedure Close_Forge is
    begin
       Save_State;
       if Quit_App /= null then
@@ -963,7 +963,7 @@ package body Studio is
       else
          Win.Hide;
       end if;
-   end Close_Studio;
+   end Close_Forge;
 
    type Action is
      (A_New, A_New_Basic, A_Import_PRG, A_Fetch_Basic, A_Open, A_Save, A_Save_As, A_Close_Tab, A_Set_Main,
@@ -1054,7 +1054,7 @@ package body Studio is
                Source_View.Redo (Tabs (T).Buffer);
             end if;
          when A_Close =>
-            Close_Studio;
+            Close_Forge;
          when A_Build =>
             Dummy := Build;
          when A_Run =>
@@ -1272,7 +1272,7 @@ package body Studio is
                        Event : Gdk.Event.Gdk_Event) return Boolean is
       pragma Unreferenced (Self, Event);
    begin
-      Close_Studio;
+      Close_Forge;
       return True;    --  keep the window (and the open files) for later
    end On_Delete;
 
@@ -1385,7 +1385,7 @@ package body Studio is
          "");
 
       Gtk_New (Win);
-      Win.Set_Title ("AdaC64 Studio");
+      Win.Set_Title ("AdaC64 Forge");
       Win.Set_Default_Size (1280, 820);
       Win.On_Delete_Event (On_Delete'Access);
       Gtk_New (Accel);
@@ -1410,7 +1410,7 @@ package body Studio is
       Separator (M);
       Item (M, "_Close tab", A_Close_Tab, GDK_LC_w, Control_Mask);
       Separator (M);
-      Item (M, "Close studio", A_Close);
+      Item (M, "Close Forge", A_Close);
       M := Menu ("_Edit");
       Item (M, "_Undo", A_Undo, GDK_LC_z, Control_Mask);
       Item (M, "_Redo", A_Redo, GDK_LC_z, Control_Mask or Shift_Mask);
@@ -1540,7 +1540,7 @@ package body Studio is
          if File = "" then
             --  Reopen the files of the last session
             declare
-               S : constant String := Settings.Get ("studio_files", "");
+               S : constant String := Settings.Get ("forge_files", Settings.Get ("studio_files", ""));
                From : Positive := S'First;
             begin
                for I in S'Range loop
@@ -1557,7 +1557,7 @@ package body Studio is
                   end if;
                end loop;
                declare
-                  M : constant String := Settings.Get ("studio_main", "");
+                  M : constant String := Settings.Get ("forge_main", Settings.Get ("studio_main", ""));
                begin
                   if M /= "" and then Find_Tab (M) > 0 then
                      Main_File := To_Unbounded_String (M);
@@ -1613,8 +1613,8 @@ package body Studio is
             Append (Files, Tabs (I).Path);
          end if;
       end loop;
-      Settings.Set ("studio_files", To_String (Files));
-      Settings.Set ("studio_main", To_String (Main_File));
+      Settings.Set ("forge_files", To_String (Files));
+      Settings.Set ("forge_main", To_String (Main_File));
    end Save_State;
 
    --  Highlight the BASIC line being executed (CURLIN)
@@ -1679,4 +1679,4 @@ package body Studio is
       end if;
    end Tick;
 
-end Studio;
+end Forge;

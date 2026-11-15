@@ -1,4 +1,4 @@
---  Minimal binding to GtkSourceView 4 (code editor widget) for the studio.
+--  Minimal binding to GtkSourceView 4 (code editor widget) for the forge.
 --  The view and buffer are ordinary GtkTextView / GtkTextBuffer objects
 --  to GtkAda, so all of Gtk.Text_View and Gtk.Text_Buffer apply.
 

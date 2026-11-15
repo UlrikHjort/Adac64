@@ -12,7 +12,7 @@
 --    --asm SRC [-o OUT] assemble a source file and exit
 --    --basic SRC        tokenize a .bas file (BASIC 7.0 with --c128) and exit
 --    --list PRG         print the BASIC listing of a .prg file
---    --studio [SRC]     open the studio (assembler IDE and debugger)
+--    --forge [SRC]     open the forge (assembler IDE and debugger)
 --    --sid 6581|8580    SID chip model (default: last used / 6581)
 --    --drive 1541|1571  drive 8 model (1571 needs its 32 KB ROM)
 --    --reu KB           RAM expansion: 128, 256, 512, 1024 .. 16384 (0 = none)
@@ -78,15 +78,15 @@ procedure AdaC64 is
    I        : Positive := 1;
    Ok       : Boolean;
 
-   --  Files the studio opens itself (sources, sprites, charsets)
-   function Studio_File_Type (Path : String) return Boolean is
+   --  Files the forge opens itself (sources, sprites, charsets)
+   function Forge_File_Type (Path : String) return Boolean is
       L : constant String := Ada.Characters.Handling.To_Lower (Path);
       function Ends (E : String) return Boolean is
         (L'Length > E'Length and then L (L'Last - E'Length + 1 .. L'Last) = E);
    begin
       return Asm.Is_Source (Path) or else Basic.Is_Source (Path)
         or else Ends (".spr") or else Ends (".chr") or else Ends (".64c");
-   end Studio_File_Type;
+   end Forge_File_Type;
 
    function Unescape (S : String) return String is
       R : Unbounded_String;
@@ -104,9 +104,9 @@ procedure AdaC64 is
       return To_String (R);
    end Unescape;
 begin
-   --  Started as adac64-studio: the studio is the main window
-   if Ada.Strings.Fixed.Index (Command_Name, "studio") > 0 then
-      GUI.Open_Studio := True;
+   --  Started as adac64-forge: the forge is the main window
+   if Ada.Strings.Fixed.Index (Command_Name, "forge") > 0 then
+      GUI.Open_Forge := True;
    end if;
    while I <= Argument_Count loop
       declare
@@ -162,12 +162,12 @@ begin
                Set_Exit_Status (Failure);
             end if;
             return;
-         elsif A = "--studio" then
-            GUI.Open_Studio := True;
-            if I < Argument_Count and then Studio_File_Type (Argument (I + 1))
+         elsif A = "--forge" then
+            GUI.Open_Forge := True;
+            if I < Argument_Count and then Forge_File_Type (Argument (I + 1))
             then
                I := I + 1;
-               GUI.Studio_File := To_Unbounded_String (Argument (I));
+               GUI.Forge_File := To_Unbounded_String (Argument (I));
             end if;
          elsif A = "--c128" then
             Model := Machine.C128;
@@ -278,10 +278,10 @@ begin
       I := I + 1;
    end loop;
 
-   if Length (File) > 0 and then GUI.Open_Studio
-     and then Studio_File_Type (To_String (File))
+   if Length (File) > 0 and then GUI.Open_Forge
+     and then Forge_File_Type (To_String (File))
    then
-      GUI.Studio_File := File;
+      GUI.Forge_File := File;
       File := Null_Unbounded_String;
    elsif Length (File) > 0 and then Basic.Is_Source (To_String (File)) then
       declare

@@ -1,4 +1,4 @@
---  6502/6510 cross assembler (ACME-style syntax) for the studio.
+--  6502/6510 cross assembler (ACME-style syntax) for the forge.
 --
 --  Source syntax:
 --    label  / label:            global label (case sensitive)

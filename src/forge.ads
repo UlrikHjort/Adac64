@@ -1,7 +1,7 @@
---  AdaC64 Studio: assembler IDE and source-level debugger around the
+--  AdaC64 Forge: assembler IDE and source-level debugger around the
 --  running emulator.
 --
---  Keys (studio window):
+--  Keys (forge window):
 --    F5        build & run / continue when stopped   Ctrl+F5  rebuild & run
 --    F6        pause                                 F7       build
 --    F9        toggle breakpoint (or click the gutter)
@@ -10,10 +10,10 @@
 
 with Gtk.Window;
 
-package Studio is
+package Forge is
 
    procedure Open (Parent : Gtk.Window.Gtk_Window; File : String := "");
-   --  Show the studio window (opening File, or the files of last time).
+   --  Show the forge window (opening File, or the files of last time).
 
    function Is_Open return Boolean;
 
@@ -24,10 +24,10 @@ package Studio is
    type Proc is access procedure;
    Refresh_Screen : Proc := null;   --  redraw the emulator window
    Quit_App : Proc := null;
-   --  Set when the studio is the main window (adac64-studio): closing the
-   --  studio then quits the program instead of hiding it.
+   --  Set when the forge is the main window (adac64-forge): closing the
+   --  forge then quits the program instead of hiding it.
 
    procedure Save_State;
    --  Remember the open files in the settings.
 
-end Studio;
+end Forge;

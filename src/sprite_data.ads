@@ -1,4 +1,4 @@
---  Sprite sets for the studio's sprite editor: pixel access, editing
+--  Sprite sets for the forge's sprite editor: pixel access, editing
 --  operations and files.
 --
 --  .spr files are raw 64-byte blocks (63 bytes of sprite data plus an

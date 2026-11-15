@@ -231,7 +231,7 @@ package body Sprite_Data is
       F : File_Type;
    begin
       Create (F, Out_File, Path);
-      Put_Line (F, ";" & Count'Image & " sprites exported by AdaC64 studio" &
+      Put_Line (F, ";" & Count'Image & " sprites exported by AdaC64 Forge" &
                   " (64 bytes each; keep them 64-byte aligned)");
       Put_Line (F, "; background" & Background_Color'Image &
                   ", multicolour 1 ($d025)" & Multi_Color_1'Image &

@@ -196,7 +196,7 @@ package body Charset_Data is
         (Ada.Strings.Fixed.Trim (N'Image, Ada.Strings.Left));
    begin
       Create (F, Out_File, Path);
-      Put_Line (F, ";" & Chars'Image & " characters exported by AdaC64 studio"
+      Put_Line (F, ";" & Chars'Image & " characters exported by AdaC64 Forge"
                 & " (8 bytes each; align to 2048 bytes for the VIC)");
       Put_Line (F, "; " & (if Multicolour then "multicolour" else "hires") &
                   ", background" & Background_Color'Image &

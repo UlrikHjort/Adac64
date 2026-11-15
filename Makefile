@@ -4,7 +4,7 @@ KLAUS ?= tests/6502_functional_test.bin
 all:
 	mkdir -p bin obj
 	gprbuild -P emu.gpr -j0
-	ln -sf adac64 bin/adac64-studio
+	ln -sf adac64 bin/adac64-forge
 
 tests: all
 	mkdir -p obj/tests obj/tests_dbg

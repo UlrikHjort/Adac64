@@ -1,4 +1,4 @@
---  Charset editor window (studio).
+--  Charset editor window (forge).
 --
 --  Left button draws, right erases, Shift+click fills; click a character
 --  in the set below to edit it.  Keys: cursor keys / PgUp / PgDn select

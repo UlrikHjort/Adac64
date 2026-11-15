@@ -554,7 +554,7 @@ package body Sprite_Editor is
       F : Gtk_File_Filter;
       R : Unbounded_String;
       pragma Unreferenced (W);
-      Last : constant String := Settings.Get ("studio_dir", "");
+      Last : constant String := Settings.Get ("forge_dir", Settings.Get ("studio_dir", ""));
    begin
       Gtk_New (Dlg, Title, Win,
                (if Save then Gtk.File_Chooser.Action_Save
@@ -580,7 +580,7 @@ package body Sprite_Editor is
       end if;
       if Dlg.Run = Gtk_Response_Accept then
          R := To_Unbounded_String (Gtk.File_Chooser.Get_Filename (+Dlg));
-         Settings.Set ("studio_dir",
+         Settings.Set ("forge_dir",
                        Ada.Directories.Containing_Directory (To_String (R)));
       end if;
       Dlg.Destroy;

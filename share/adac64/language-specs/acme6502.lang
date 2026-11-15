@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 6502 assembly, ACME dialect (AdaC64 studio) -->
+<!-- 6502 assembly, ACME dialect (AdaC64 Forge) -->
 <language id="acme6502" name="6502 Assembly (ACME)" version="2.0" _section="Source">
   <metadata>
     <property name="globs">*.asm;*.a;*.s;*.a65;*.src;*.inc</property>

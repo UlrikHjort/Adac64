@@ -6,12 +6,12 @@ It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
 ## Build and run
 
     make                  # needs GNAT, gprbuild, GtkAda (libgtkada-dev), libpulse-dev,
-                          # libgtksourceview-4-0 (the studio's editor)
+                          # libgtksourceview-4-0 (Forge's editor)
     bin/adac64            # C64
     bin/adac64 --c128     # C128, 40 columns
     bin/adac64 --c128 --80
     bin/adac64 game.d64   # autostart (also .t64 / .prg / .asm / .bas)
-    bin/adac64-studio     # assembler IDE and debugger (with the emulator)
+    bin/adac64-forge     # assembler IDE and debugger (with the emulator)
     make tests            # keyboard, CPU and debugger tests
 
 Autostart types what a user would: `LOAD"name",8,1` + `RUN` on the C64, and
@@ -144,12 +144,12 @@ up when a breakpoint is hit. Numbers are hex (`$` optional):
     bl           list breakpoints    dev c | 8   view C64 or 1541 CPU
     x            close and continue
 
-## Studio: assembler and debugger
+## Forge: assembler and debugger
 
-`bin/adac64-studio [file]` starts the studio (`bin/adac64 --studio` does the
+`bin/adac64-forge [file]` starts Forge (`bin/adac64 --forge` does the
 same): an IDE as the main window, with the emulator in its own window as
-the machine your programs run on (F12 brings it up; closing the studio
-quits). `bin/adac64` alone is just the emulator. The studio is a 6502 editor with syntax highlighting (GtkSourceView), an
+the machine your programs run on (F12 brings it up; closing Forge
+quits). `bin/adac64` alone is just the emulator. Forge is a 6502 editor with syntax highlighting (GtkSourceView), an
 assembler, and a source-level debugger working on the running machine.
 
 | Key | | Key | |
@@ -163,7 +163,7 @@ assembler, and a source-level debugger working on the running machine.
 Run resets the machine, waits for READY, copies the program into memory
 (the disk in the drive is left alone) and types `RUN` when the program
 starts with a BASIC line at `$0801` (`!basic`), otherwise `SYS start`.
-When a breakpoint, watchpoint, step or pause stops the machine, the studio
+When a breakpoint, watchpoint, step or pause stops the machine, Forge
 shows the source line, registers and cycle count (also since the previous
 stop), a disassembly with labels and a memory view (type `$addr` or a
 label). Watchpoints stop after the instruction that touches the address:
@@ -207,7 +207,7 @@ normal PETSCII letters and upper-case ones the shifted letters; special
 characters are written in braces: `{clr} {home} {wht} {red} {rvon} {rvof}
 {down} {3 down} {left*2} {f1} {pi} {pound} {$a6}` (see `src/basic.ads`).
 
-In the studio, File → New BASIC program (Ctrl+Shift+N) gives a BASIC tab;
+In Forge, File → New BASIC program (Ctrl+Shift+N) gives a BASIC tab;
 F5 tokenizes it (BASIC V2 on the C64, BASIC 7.0 with its extra keywords on
 the C128), loads it and types RUN, and the line being executed is
 highlighted while it runs. File → Import BASIC PRG lists a program file,
@@ -222,7 +222,7 @@ real ROM tokenizers produce exactly the same bytes.
 
 ### Sprite editor
 
-Studio → Tools → Sprite editor (Ctrl+E), or open a `.spr` file. A set holds
+Forge → Tools → Sprite editor (Ctrl+E), or open a `.spr` file. A set holds
 up to 256 sprites (strip at the bottom, PgUp/PgDn). Draw with the left
 button, erase with the right, Shift+click flood-fills; pens 1-4 are
 background, sprite colour, multicolour 1 and 2 (`$D025`/`$D026`), and a
@@ -243,7 +243,7 @@ ACME source with one `!byte %...###...` line per row and a label per sprite.
 
 ### Charset editor
 
-Studio → Tools → Charset editor (Ctrl+K), or open a `.chr` / `.64c` file.
+Forge → Tools → Charset editor (Ctrl+K), or open a `.chr` / `.64c` file.
 It starts from the C64 character ROM (*ROM* / *ROM lower* reload the upper
 or lower case set). Click a character in the set (or move with the cursor
 keys) and draw it in the 8 x 8 grid like a sprite; pens are background,
@@ -304,7 +304,7 @@ Disk images can also be dropped onto the window.
     src/monitor*.*   machine-code monitor src/disasm.* disassembler
     src/asm.*        6502 assembler (ACME syntax)
     src/basic.*      BASIC V2 / 7.0 tokenizer and lister
-    src/studio.*     studio window    src/source_view.*  GtkSourceView binding
+    src/forge.*      Forge window    src/source_view.*  GtkSourceView binding
     src/sprite_*     sprite editor (data model / window)
     src/charset_*    charset editor (data model / window)
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)

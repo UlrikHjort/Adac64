@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Commodore BASIC V2 / 7.0 text (AdaC64 studio) -->
+<!-- Commodore BASIC V2 / 7.0 text (AdaC64 Forge) -->
 <language id="cbmbasic" name="Commodore BASIC" version="2.0" _section="Source">
   <metadata>
     <property name="globs">*.bas</property>

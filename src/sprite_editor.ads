@@ -1,4 +1,4 @@
---  Sprite editor window (studio).
+--  Sprite editor window (forge).
 --
 --  Left button draws with the selected pen, right button erases,
 --  Shift+click flood-fills.  Keys: PgUp/PgDn previous/next sprite,

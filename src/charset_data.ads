@@ -1,4 +1,4 @@
---  Character sets for the studio's charset editor: 256 characters of
+--  Character sets for the forge's charset editor: 256 characters of
 --  8 x 8 pixels (multicolour: 4 x 8 double-wide pixels).
 --
 --  .chr files are the raw bytes (8 per character, up to 2048); a 2-byte
