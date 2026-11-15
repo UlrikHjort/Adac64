@@ -98,8 +98,17 @@ C64 (fast load or the emulated drive), and autostart picks the expansion a
 program was made for from its load address ($1001 unexpanded, $0401 +3K,
 $1201 +8K or more, $A000 cartridge images run from RAM). Forge builds BASIC
 and assembly programs for wherever BASIC starts on the configured VIC-20;
-the graphics editors work with the C64 and C128 only. Not there yet: VIC-20
-`.crt` cartridges, light pen / paddles, snapshots.
+the graphics editors work with the C64 and C128 only.
+
+Cartridges (File → Insert cartridge, or autostart the file): VICE `.crt`
+images of the generic type, `.prg` files loading at `$A000`/`$B000` (or 16K /
+32K images at `$2000`/`$4000`/`$6000`), headerless `.bin` / `.rom` / `.a0`
+images, and split images such as `game-6000.prg` + `game-a000.prg` (opening
+either part loads both). They are placed like VICE places them (16K images
+go to their block plus `$A000`, 4K images are mirrored) and the machine is
+reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Not
+there yet on the VIC-20: bank-switching cartridges (Mega-Cart, Final
+Expansion), light pen and paddles, snapshots.
 
 ### Drive 8
 

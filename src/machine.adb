@@ -1,3 +1,5 @@
+with Ada.Strings.Fixed;
+with Ada.Characters.Handling;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Unchecked_Deallocation;
@@ -186,6 +188,14 @@ package body Machine is
    V20_VIA1, V20_VIA2 : VIA.Chip;
    V20_Mem : VIC20_Memory := Unexpanded;
    V20_Block5 : Boolean := False;    --  RAM at $A000 (cartridge images)
+
+   --  VIC-20 cartridge ROM per 8K block (1 = $2000, 2 = $4000, 3 = $6000,
+   --  5 = $A000), stored at Cart_Base + block * 8K
+   type V20_Block_Set is array (1 .. 5) of Boolean;
+   V20_Cart : V20_Block_Set := (others => False);
+   V20_Cart_Name : Unbounded_String;
+   function V20_Cart_Offset (B : Positive) return Natural is
+     (Cart_Base + B * 16#2000#);
 
    function Has_3K return Boolean is
      (V20_Mem in Plus_3K | Plus_35K);
@@ -440,7 +450,10 @@ package body Machine is
       end if;
       RAM (16#10#, 16#1F#);
       for B in 1 .. 3 loop
-         if Blocks >= B then
+         if V20_Cart (B) then
+            Set (Byte (B * 16#20#), Byte (B * 16#20# + 16#1F#),
+                 V20_Cart_Offset (B), Write_Sink);
+         elsif Blocks >= B then
             RAM (Byte (B * 16#20#), Byte (B * 16#20# + 16#1F#));
          else
             None (Byte (B * 16#20#), Byte (B * 16#20# + 16#1F#));
@@ -448,7 +461,9 @@ package body Machine is
       end loop;
       Set (16#80#, 16#8F#, ROM_C64_Char, Write_Sink);
       Set (16#90#, 16#9F#, IO_Page, IO_Page);
-      if V20_Mem = Plus_35K or else V20_Block5 then
+      if V20_Cart (5) then
+         Set (16#A0#, 16#BF#, V20_Cart_Offset (5), Write_Sink);
+      elsif V20_Mem = Plus_35K or else V20_Block5 then
          RAM (16#A0#, 16#BF#);
       else
          None (16#A0#, 16#BF#);
@@ -1171,12 +1186,188 @@ package body Machine is
       Update_Drive_State;
    end Attach;
 
+   ---------------------------------------------------------------------
+   --  VIC-20 cartridges: VICE .crt ("VIC20 CARTRIDGE", generic type) and
+   --  raw images (with or without load address) placed like VICE does;
+   --  split images (name-2000 / -4000 / -6000 / -a000) are joined.
+   ---------------------------------------------------------------------
+
+   function Read_All (Path : String; Ok : out Boolean) return Byte_Array is
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+   begin
+      Open (F, In_File, Path);
+      declare
+         D : Byte_Array (0 .. Natural (Size (F)) - 1);
+      begin
+         Byte_Array'Read (Stream (F), D);
+         Close (F);
+         Ok := True;
+         return D;
+      end;
+   exception
+      when others =>
+         Ok := False;
+         return (1 .. 0 => 0);
+   end Read_All;
+
+   --  Copy Data to CPU address Addr in the cartridge blocks
+   procedure V20_Place (Addr : Natural; Data : Byte_Array; Ok : out Boolean) is
+   begin
+      Ok := True;
+      for I in Data'Range loop
+         declare
+            A : constant Natural := Addr + (I - Data'First);
+            B : constant Natural := A / 16#2000#;
+         begin
+            if B not in 1 .. 3 | 5 then
+               Ok := False;
+               Err := To_Unbounded_String
+                 ("cartridge data outside $2000-$7FFF / $A000-$BFFF");
+               return;
+            end if;
+            Mem (V20_Cart_Offset (B) + A mod 16#2000#) := Data (I);
+            V20_Cart (B) := True;
+         end;
+      end loop;
+   end V20_Place;
+
+   procedure V20_Load_Raw (D : Byte_Array; Ok : out Boolean) is
+      Has_Addr : constant Boolean := D'Length mod 16#800# = 2;
+      Addr : constant Natural :=
+        (if Has_Addr then Natural (D (D'First)) + 256 * Natural (D (D'First + 1))
+         else 0);
+      Body_D : constant Byte_Array :=
+        (if Has_Addr then D (D'First + 2 .. D'Last) else D);
+      Len : constant Natural := Body_D'Length;
+   begin
+      if not Has_Addr and then D'Length mod 16#800# /= 0 then
+         Ok := False;
+         Err := To_Unbounded_String ("not a VIC-20 cartridge image (size)");
+         return;
+      end if;
+      if Len = 16#8000# then
+         V20_Place (16#2000#, Body_D (Body_D'First .. Body_D'First + 16#5FFF#), Ok);
+         if Ok then
+            V20_Place (16#A000#, Body_D (Body_D'First + 16#6000# .. Body_D'Last), Ok);
+         end if;
+      elsif Len = 16#4000# and then Addr in 16#2000# | 16#4000# | 16#6000# then
+         V20_Place (Addr, Body_D (Body_D'First .. Body_D'First + 16#1FFF#), Ok);
+         if Ok then
+            V20_Place (16#A000#, Body_D (Body_D'First + 16#2000# .. Body_D'Last), Ok);
+         end if;
+      elsif Len = 16#2000# then
+         V20_Place ((if Addr = 0 then 16#A000# else Addr), Body_D, Ok);
+      elsif Len = 16#1000# then
+         declare
+            A : constant Natural := (if Addr = 0 then 16#A000# else Addr);
+         begin
+            V20_Place (A, Body_D, Ok);
+            if Ok and then A mod 16#2000# = 0 then
+               V20_Place (A + 16#1000#, Body_D, Ok);   --  4K mirrored in 8K
+            end if;
+         end;
+      elsif Len = 16#0800# then
+         V20_Place ((if Addr = 0 then 16#B000# else Addr), Body_D, Ok);
+      else
+         Ok := False;
+         Err := To_Unbounded_String ("not a VIC-20 cartridge image (size)");
+      end if;
+   end V20_Load_Raw;
+
+   procedure V20_Load_CRT (D : Byte_Array; Ok : out Boolean) is
+      function BE16 (I : Natural) return Natural is
+        (Natural (D (I)) * 256 + Natural (D (I + 1)));
+      function BE32 (I : Natural) return Natural is
+        (BE16 (I) * 65536 + BE16 (I + 2));
+      P : Natural := D'First + BE32 (D'First + 16#10#);
+   begin
+      Ok := False;
+      if BE16 (D'First + 16#16#) /= 0 then
+         Err := To_Unbounded_String
+           ("only generic VIC-20 cartridges (.crt type 0) are supported");
+         return;
+      end if;
+      while P + 16 <= D'Last loop
+         exit when Character'Val (D (P)) /= 'C';
+         declare
+            Packet : constant Natural := BE32 (P + 4);
+            Start  : constant Natural := BE16 (P + 12);
+            Len    : constant Natural := BE16 (P + 14);
+         begin
+            V20_Place (Start, D (P + 16 .. P + 15 + Len), Ok);
+            exit when not Ok or else Packet = 0;
+            P := P + Packet;
+         end;
+      end loop;
+   end V20_Load_CRT;
+
+   procedure V20_Attach_Cartridge (Path : String; Ok : out Boolean) is
+      D : constant Byte_Array := Read_All (Path, Ok);
+      Lower : constant String := Ada.Characters.Handling.To_Lower (Path);
+      Suffixes : constant array (1 .. 4) of String (1 .. 5) :=
+        ("-2000", "-4000", "-6000", "-a000");
+   begin
+      if not Ok then
+         Err := To_Unbounded_String ("cannot read " & Path);
+         return;
+      end if;
+      V20_Cart := (others => False);
+      for B in 1 .. 5 loop
+         Mem (V20_Cart_Offset (B) .. V20_Cart_Offset (B) + 16#1FFF#) :=
+           (others => 16#FF#);
+      end loop;
+      if D'Length > 64 and then Character'Val (D (D'First)) = 'V'
+        and then Character'Val (D (D'First + 3)) = '2'
+      then
+         V20_Load_CRT (D, Ok);
+      else
+         V20_Load_Raw (D, Ok);
+         --  the other parts of a split image
+         for S of Suffixes loop
+            declare
+               I : constant Natural := Ada.Strings.Fixed.Index (Lower, S);
+            begin
+               if Ok and then I > 0 then
+                  for T of Suffixes loop
+                     if T /= S then
+                        declare
+                           Other : String := Path;
+                           Part_Ok : Boolean;
+                        begin
+                           Other (I .. I + 4) := T;
+                           if not Ada.Directories.Exists (Other) then
+                              Other (I + 1 .. I + 4) :=
+                                Ada.Characters.Handling.To_Upper (T (2 .. 5));
+                           end if;
+                           if Ada.Directories.Exists (Other) then
+                              V20_Load_Raw (Read_All (Other, Part_Ok), Part_Ok);
+                           end if;
+                        end;
+                     end if;
+                  end loop;
+               end if;
+            end;
+         end loop;
+      end if;
+      if Ok then
+         V20_Cart_Name := To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+         Reset;                 --  the KERNAL starts it (A0CBM at $A004)
+      else
+         V20_Cart := (others => False);
+      end if;
+   end V20_Attach_Cartridge;
+
    procedure Attach_Cartridge (Path : String; Ok : out Boolean) is
       Info : CRT.Image;
       Data : Byte_Array_Access;
       procedure Free is new Ada.Unchecked_Deallocation
         (Byte_Array, Byte_Array_Access);
    begin
+      if Current_Model = VIC20 then
+         V20_Attach_Cartridge (Path, Ok);
+         return;
+      end if;
       CRT.Load (Path, Info, Data, Ok);
       if Ok and then Info.Kind = CRT.Unsupported then
          Ok := False;
@@ -1196,13 +1387,16 @@ package body Machine is
 
    procedure Detach_Cartridge is
    begin
+      V20_Cart := (others => False);
+      V20_Cart_Name := Null_Unbounded_String;
       Cart_Present := False;
       Cart_Info := (others => <>);
       Reset;
    end Detach_Cartridge;
 
    function Cartridge_Name return String is
-     (if Cart_Present then Cart_Info.Name else "");
+     (if Current_Model = VIC20 then To_String (V20_Cart_Name)
+      elsif Cart_Present then Cart_Info.Name else "");
 
    procedure Detach is
    begin
@@ -1756,6 +1950,38 @@ package body Machine is
       return Current_Model = C128 and then Search (VDC_Screen'Access, 2000);
    end Screen_Contains;
 
+   --  Raw cartridge images (.bin .rom .a0), split images, and .prg files
+   --  loading at $A000 / $B000
+   type String_Array is array (Positive range <>) of String (1 .. 5);
+
+   function Is_VIC20_Cartridge (Path : String) return Boolean is
+      L : constant String := Ada.Characters.Handling.To_Lower (Path);
+      function Ends (E : String) return Boolean is
+        (L'Length > E'Length and then L (L'Last - E'Length + 1 .. L'Last) = E);
+      Ok : Boolean;
+   begin
+      if Ends (".bin") or else Ends (".rom") or else Ends (".a0") then
+         return True;
+      end if;
+      for S of String_Array'("-2000", "-4000", "-6000", "-a000") loop
+         if Ada.Strings.Fixed.Index (L, S) > 0 then
+            return True;
+         end if;
+      end loop;
+      if Ends (".prg") then
+         declare
+            D : constant Byte_Array := Read_All (Path, Ok);
+         begin
+            return Ok and then D'Length > 2 and then D (D'First) = 0
+              and then (D (D'First + 1) in 16#A0# | 16#B0#
+                        or else (D'Length - 2 in 16#4000# | 16#8000#
+                                 and then D (D'First + 1)
+                                   in 16#20# | 16#40# | 16#60#));
+         end;
+      end if;
+      return False;
+   end Is_VIC20_Cartridge;
+
    procedure Autostart (Path : String; Ok : out Boolean) is
    begin
       if Path'Length > 4 and then
@@ -1781,6 +2007,12 @@ package body Machine is
          or else Path (Path'Last - 3 .. Path'Last) = ".CRT")
       then
          Type_Queue := Null_Unbounded_String;
+         Attach_Cartridge (Path, Ok);
+         return;
+      end if;
+      if Current_Model = VIC20 and then Is_VIC20_Cartridge (Path) then
+         Type_Queue := Null_Unbounded_String;
+         Auto := Idle;
          Attach_Cartridge (Path, Ok);
          return;
       end if;

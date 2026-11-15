@@ -203,9 +203,9 @@ package body GUI is
       Keyboard.Release_All;
    end Start_Machine;
 
-   type Ext_List is array (1 .. 7) of String (1 .. 3);
+   type Ext_List is array (1 .. 10) of String (1 .. 3);
    Extensions : constant Ext_List :=
-     ("d64", "d71", "g64", "t64", "tap", "prg", "crt");
+     ("d64", "d71", "g64", "t64", "tap", "prg", "crt", "bin", "rom", "a0 ");
 
    function Choose_Save_File (Title : String) return String is
       Dlg : Gtk_File_Chooser_Dialog;
@@ -281,10 +281,14 @@ package body GUI is
       W := Dlg.Add_Button ("_Cancel", Gtk_Response_Cancel);
       W := Dlg.Add_Button ("_Open", Gtk_Response_Accept);
       Gtk_New (Filter_C64);
-      Filter_C64.Set_Name ("C64 files (d64, d71, g64, t64, tap, prg, crt)");
+      Filter_C64.Set_Name
+        ("Commodore files (d64, d71, g64, t64, tap, prg, crt, bin, rom)");
       for Ext of Extensions loop
-         Filter_C64.Add_Pattern ("*." & Ext);
-         Filter_C64.Add_Pattern ("*." & Ada.Characters.Handling.To_Upper (Ext));
+         Filter_C64.Add_Pattern
+           ("*." & Ada.Strings.Fixed.Trim (Ext, Ada.Strings.Right));
+         Filter_C64.Add_Pattern
+           ("*." & Ada.Characters.Handling.To_Upper
+              (Ada.Strings.Fixed.Trim (Ext, Ada.Strings.Right)));
       end loop;
       Gtk_New (Filter_All);
       Filter_All.Set_Name ("All files");
@@ -384,7 +388,10 @@ package body GUI is
 
    procedure On_Attach_Cart (Item : access Gtk_Menu_Item_Record'Class) is
       pragma Unreferenced (Item);
-      Path : constant String := Choose_File ("Insert cartridge (.crt)");
+      Path : constant String :=
+        Choose_File (if Machine.Model = VIC20
+                     then "Insert VIC-20 cartridge (.crt, .prg, .bin, .rom)"
+                     else "Insert cartridge (.crt)");
       Ok : Boolean;
    begin
       if Path /= "" then
