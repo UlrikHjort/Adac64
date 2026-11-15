@@ -16,6 +16,8 @@ with Disasm;
 with CRT;
 with REU;
 with Tape;
+with VIA;
+with VIC_I;
 use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
@@ -176,6 +178,22 @@ package body Machine is
    function VIC_Color (Index : Natural) return Byte;
 
    package CPU is new MOS6502 (Read => Bus_Read, Write => Bus_Write);
+
+   --  VIC-20
+   function V20_Fetch (Addr : Word) return Byte;
+   function V20_Color (Index : Natural) return Byte;
+   package V20 is new VIC_I (Fetch => V20_Fetch, Color => V20_Color);
+   V20_VIA1, V20_VIA2 : VIA.Chip;
+   V20_Mem : VIC20_Memory := Unexpanded;
+   V20_Block5 : Boolean := False;    --  RAM at $A000 (cartridge images)
+
+   function Has_3K return Boolean is
+     (V20_Mem in Plus_3K | Plus_35K);
+   function Blocks return Natural is
+     (case V20_Mem is
+        when Unexpanded | Plus_3K => 0,
+        when Plus_8K => 1, when Plus_16K => 2,
+        when Plus_24K | Plus_35K => 3);
 
    function Z80_Mem_Read (Addr : Word) return Byte;
    procedure Z80_Mem_Write (Addr : Word; Value : Byte);
@@ -389,9 +407,62 @@ package body Machine is
       VIC_Color_Bank := Natural (Shift_Right (Lines, 1) and 1);
    end Map_C128;
 
+   --  VIC-20: RAM where present, ROMs at $8000 / $C000 / $E000, I/O at
+   --  $9000-$9FFF, nothing elsewhere (reads give $FF)
+   procedure Map_VIC20 is
+      procedure Set (From, To : Byte; Read_Off, Write_Off : Integer) is
+      begin
+         for P in From .. To loop
+            Read_Map (P) := (if Read_Off < 0 then Read_Off
+                             else Read_Off + Natural (P - From) * 256);
+            Write_Map (P) := (if Write_Off < 0 then Write_Off
+                              elsif Write_Off = Write_Sink then Write_Sink
+                              else Write_Off + Natural (P - From) * 256);
+         end loop;
+      end Set;
+      procedure RAM (From, To : Byte) is
+      begin
+         Set (From, To, Natural (From) * 256, Natural (From) * 256);
+      end RAM;
+      procedure None (From, To : Byte) is
+      begin
+         for P in From .. To loop
+            Read_Map (P) := ROM_Empty;
+            Write_Map (P) := Write_Sink;
+         end loop;
+      end None;
+   begin
+      RAM (16#00#, 16#03#);
+      if Has_3K then
+         RAM (16#04#, 16#0F#);
+      else
+         None (16#04#, 16#0F#);
+      end if;
+      RAM (16#10#, 16#1F#);
+      for B in 1 .. 3 loop
+         if Blocks >= B then
+            RAM (Byte (B * 16#20#), Byte (B * 16#20# + 16#1F#));
+         else
+            None (Byte (B * 16#20#), Byte (B * 16#20# + 16#1F#));
+         end if;
+      end loop;
+      Set (16#80#, 16#8F#, ROM_C64_Char, Write_Sink);
+      Set (16#90#, 16#9F#, IO_Page, IO_Page);
+      if V20_Mem = Plus_35K or else V20_Block5 then
+         RAM (16#A0#, 16#BF#);
+      else
+         None (16#A0#, 16#BF#);
+      end if;
+      Set (16#C0#, 16#DF#, ROM_C64_Basic, Write_Sink);
+      Set (16#E0#, 16#FF#, ROM_C64_Kernal, Write_Sink);
+      Kernal_High := True;
+   end Map_VIC20;
+
    procedure Rebuild_Map is
    begin
-      if C64_Mode then
+      if Current_Model = VIC20 then
+         Map_VIC20;
+      elsif C64_Mode then
          Map_C64;
       else
          Map_C128;
@@ -496,6 +567,133 @@ package body Machine is
       end if;
       return V;
    end CIA2_Port_A_Read;
+
+   ---------------------------------------------------------------------
+   --  VIC-20 I/O
+   ---------------------------------------------------------------------
+
+   --  The VIC sees CPU $8000-$9FFF at its $0000-$1FFF and CPU $0000-$1FFF
+   --  at $2000-$3FFF
+   function V20_Fetch (Addr : Word) return Byte is
+      A : constant Natural := Natural (Addr and 16#3FFF#);
+      CPU_Addr : constant Natural :=
+        (if A >= 16#2000# then A - 16#2000# else 16#8000# + A);
+   begin
+      if CPU_Addr >= 16#8000# then
+         return (if CPU_Addr < 16#9000#
+                 then Mem (ROM_C64_Char + CPU_Addr - 16#8000#) else 16#FF#);
+      elsif CPU_Addr in 16#0400# .. 16#0FFF# and then not Has_3K then
+         return 16#FF#;
+      end if;
+      return Mem (CPU_Addr);
+   end V20_Fetch;
+
+   function V20_Color (Index : Natural) return Byte is
+     (Color_RAM (Index mod 1024) and 15);
+
+   --  VIC-20 keyboard: VIA2 port B selects columns, port A reads rows.
+   --  The keys are the C64's, at other matrix positions.
+   C64_Col_Of_Row : constant array (0 .. 7) of Natural := (7, 1, 2, 3, 4, 5, 6, 0);
+   C64_Row_Of_Col : constant array (0 .. 7) of Natural := (0, 1, 2, 7, 4, 5, 6, 3);
+
+   function V20_Key (Col, Row : Natural) return Boolean is
+     ((Shift_Right (Keyboard.Matrix (C64_Col_Of_Row (Row)),
+                    C64_Row_Of_Col (Col)) and 1) /= 0);
+
+   function V20_Joy return Byte is (Keyboard.Joy1 or Keyboard.Joy2);
+
+   procedure V20_Inputs is
+      Cols : constant Byte := V20_VIA2.ORB or not V20_VIA2.DDRB;
+      Rows : Byte := 16#FF#;
+      J : constant Byte := V20_Joy;
+      PA1 : Byte := 16#FF#;
+   begin
+      for C in 0 .. 7 loop
+         if (Shift_Right (Cols, C) and 1) = 0 then
+            for R in 0 .. 7 loop
+               if V20_Key (C, R) then
+                  Rows := Rows and not Shift_Left (1, R);
+               end if;
+            end loop;
+         end if;
+      end loop;
+      V20_VIA2.Port_A_In := Rows;
+      V20_VIA2.Port_B_In := (if (J and 8) /= 0 then 16#7F# else 16#FF#);
+      --  VIA1 port A: serial CLK in (PA0), DATA in (PA1), joystick,
+      --  cassette switch
+      Sync_Drive;
+      if IEC.CLK then
+         PA1 := PA1 and not 16#01#;
+      end if;
+      if IEC.DATA then
+         PA1 := PA1 and not 16#02#;
+      end if;
+      if (J and 1) /= 0 then PA1 := PA1 and not 16#04#; end if;
+      if (J and 2) /= 0 then PA1 := PA1 and not 16#08#; end if;
+      if (J and 4) /= 0 then PA1 := PA1 and not 16#10#; end if;
+      if (J and 16) /= 0 then PA1 := PA1 and not 16#20#; end if;
+      if Tape.Present and then Tape.Playing then
+         PA1 := PA1 and not 16#40#;
+      end if;
+      V20_VIA1.Port_A_In := PA1;
+   end V20_Inputs;
+
+   --  Serial bus outputs: ATN = VIA1 PA7, CLK = VIA2 CA2, DATA = VIA2 CB2
+   --  (all through inverters: high = line pulled low)
+   procedure V20_Outputs is
+      Old_ATN : constant Boolean := IEC.C64_ATN;
+   begin
+      IEC.C64_ATN := (VIA.Port_A_Out (V20_VIA1) and 16#80#) /= 0;
+      IEC.C64_CLK := VIA.CA2_High (V20_VIA2);
+      IEC.C64_DATA := VIA.CB2_High (V20_VIA2);
+      Tape.Motor := not VIA.CA2_High (V20_VIA1);
+      if IEC.C64_ATN /= Old_ATN and then Drive_On then
+         Drive1541.ATN_Changed;
+      end if;
+   end V20_Outputs;
+
+   function V20_IO_Read (Addr : Word) return Byte is
+      R : Byte := 16#FF#;
+   begin
+      case Addr is
+         when 16#9000# .. 16#90FF# =>
+            return V20.Read (Natural (Addr and 15));
+         when 16#9100# .. 16#93FF# =>
+            V20_Inputs;
+            if (Addr and 16#10#) /= 0 then
+               R := R and VIA.Read (V20_VIA1, Natural (Addr and 15));
+            end if;
+            if (Addr and 16#20#) /= 0 then
+               R := R and VIA.Read (V20_VIA2, Natural (Addr and 15));
+            end if;
+            return R;
+         when 16#9400# .. 16#97FF# =>
+            return (Color_RAM (Natural (Addr - 16#9400#)) and 15) or 16#F0#;
+         when others =>
+            return 16#FF#;
+      end case;
+   end V20_IO_Read;
+
+   procedure V20_IO_Write (Addr : Word; Value : Byte) is
+   begin
+      case Addr is
+         when 16#9000# .. 16#90FF# =>
+            V20.Write (Natural (Addr and 15), Value);
+         when 16#9100# .. 16#93FF# =>
+            Sync_Drive (Write_Delay => 1);
+            if (Addr and 16#10#) /= 0 then
+               VIA.Write (V20_VIA1, Natural (Addr and 15), Value);
+            end if;
+            if (Addr and 16#20#) /= 0 then
+               VIA.Write (V20_VIA2, Natural (Addr and 15), Value);
+            end if;
+            V20_Outputs;
+         when 16#9400# .. 16#97FF# =>
+            Color_RAM (Natural (Addr - 16#9400#)) := Value and 15;
+         when others =>
+            null;
+      end case;
+   end V20_IO_Write;
 
    function MMU_Read (Reg : Natural) return Byte is
    begin
@@ -636,6 +834,9 @@ package body Machine is
       Off : constant Natural := Natural (Addr and 16#FF#);
    begin
       Catch_Up;
+      if Current_Model = VIC20 then
+         return V20_IO_Read (Addr);
+      end if;
       case Addr is
          when 16#D000# .. 16#D3FF# =>
             return VIC.Read (Natural (Addr and 16#3F#));
@@ -687,6 +888,10 @@ package body Machine is
       Off : constant Natural := Natural (Addr and 16#FF#);
    begin
       Catch_Up;
+      if Current_Model = VIC20 then
+         V20_IO_Write (Addr, Value);
+         return;
+      end if;
       case Addr is
          when 16#D000# .. 16#D3FF# =>
             VIC.Write (Natural (Addr and 16#3F#), Value);
@@ -769,7 +974,7 @@ package body Machine is
       if Watch_Count > 0 and then In_Step then
          Check_Watch (Addr, False);
       end if;
-      if Addr < 2 then
+      if Addr < 2 and then Current_Model /= VIC20 then
          return (if Addr = 0 then Port_DDR else Port_Read);
       end if;
       if Page = 16#FF# and then not C64_Mode
@@ -791,7 +996,7 @@ package body Machine is
       if Watch_Count > 0 and then In_Step then
          Check_Watch (Addr, True);
       end if;
-      if Addr < 2 then
+      if Addr < 2 and then Current_Model /= VIC20 then
          if Addr = 0 then
             Port_DDR := Value;
          else
@@ -820,7 +1025,7 @@ package body Machine is
          end if;
          return;
       end if;
-      if Addr = 16#FF00# then
+      if Addr = 16#FF00# and then Current_Model /= VIC20 then
          REU.FF00_Written;      --  C64: the write also goes to RAM below
          REU_Stall;
       end if;
@@ -1065,6 +1270,94 @@ package body Machine is
       Drive1541.Flush;
    end Shutdown;
 
+   VIC20_ROM_Dir : Unbounded_String;
+
+   --  VIC-20 ROMs: roms/vic20 (zimmers.net names) next to the program or
+   --  in the current directory, or <roms>/VIC20 (VICE names)
+   function Find_VIC20_ROM (Names : String) return String is
+      Exe_Dir : constant String :=
+        Ada.Directories.Containing_Directory
+          (Ada.Directories.Containing_Directory
+             (Ada.Directories.Full_Name (Ada.Command_Line.Command_Name)));
+      Dirs : constant array (1 .. 3) of Unbounded_String :=
+        (To_Unbounded_String (Exe_Dir & "/roms/vic20"),
+         To_Unbounded_String ("roms/vic20"),
+         VIC20_ROM_Dir & "/VIC20");
+      From : Positive := Names'First;
+   begin
+      for D of Dirs loop
+         From := Names'First;
+         for I in Names'Range loop
+            if Names (I) = ' ' or else I = Names'Last then
+               declare
+                  N : constant String :=
+                    Names (From .. (if Names (I) = ' ' then I - 1 else I));
+                  P : constant String := To_String (D) & "/" & N;
+               begin
+                  if Ada.Directories.Exists (P) then
+                     return P;
+                  end if;
+               end;
+               From := I + 1;
+            end if;
+         end loop;
+      end loop;
+      return "";
+   exception
+      when others =>
+         return "";
+   end Find_VIC20_ROM;
+
+   procedure Load_VIC20_Kernal (Ok : out Boolean) is
+      P : constant String :=
+        Find_VIC20_ROM (if Standard = PAL
+                        then "kernal.901486-07.bin kernal-901486-07.bin"
+                        else "kernal.901486-06.bin kernal-901486-06.bin");
+   begin
+      Ok := P /= "";
+      if Ok then
+         Load_ROM (P, ROM_C64_Kernal, 8192, Ok => Ok);   --  (in out)
+      else
+         Err := To_Unbounded_String
+           ("VIC-20 KERNAL ROM not found (" &
+            (if Standard = PAL then "kernal.901486-07.bin"
+             else "kernal.901486-06.bin") &
+            " in roms/vic20, see the README)");
+      end if;
+   end Load_VIC20_Kernal;
+
+   procedure Load_VIC20_ROMs (ROM_Dir : String; Ok : out Boolean) is
+      Basic_P : constant String :=
+        Find_VIC20_ROM ("basic.901486-01.bin basic-901486-01.bin");
+      Char_P : constant String :=
+        Find_VIC20_ROM ("characters.901460-03.bin chargen-901460-03.bin "
+                        & "chargen");
+   begin
+      VIC20_ROM_Dir := To_Unbounded_String (ROM_Dir);
+      if Basic_P = "" or else Char_P = "" then
+         Ok := False;
+         Err := To_Unbounded_String
+           ("VIC-20 ROMs not found: basic.901486-01.bin and " &
+            "characters.901460-03.bin go into roms/vic20 (see the README)");
+         return;
+      end if;
+      Ok := True;                          --  Load_ROM only clears it
+      Load_ROM (Basic_P, ROM_C64_Basic, 8192, Ok => Ok);
+      if Ok then
+         Load_ROM (Char_P, ROM_C64_Char, 4096, Ok => Ok);
+      end if;
+      if Ok then
+         Load_VIC20_Kernal (Ok);
+      end if;
+   end Load_VIC20_ROMs;
+
+   procedure Set_VIC20_Memory (M : VIC20_Memory) is
+   begin
+      V20_Mem := M;
+   end Set_VIC20_Memory;
+
+   function VIC20_Memory_Config return VIC20_Memory is (V20_Mem);
+
    procedure Power_On (M : Model_Type; ROM_Dir : String; Ok : out Boolean) is
    begin
       Drive1541.To_Host := Fast_Byte_To_Host'Access;
@@ -1075,6 +1368,8 @@ package body Machine is
       Err := Null_Unbounded_String;
       Current_Model := M;
       case M is
+         when VIC20 =>
+            Load_VIC20_ROMs (ROM_Dir, Ok);
          when C64 =>
             declare
                D : constant String := ROM_Dir & "/C64/";
@@ -1107,11 +1402,19 @@ package body Machine is
             end;
       end case;
       Mem (ROM_Empty .. ROM_Empty + 255) := (others => 16#FF#);
+      Set_Video_Standard (Standard);   --  timing of the model's video chip
       Reset;
    end Power_On;
 
    function Model return Model_Type is (Current_Model);
-   function In_C64_Mode return Boolean is (C64_Mode);
+   function In_C64_Mode return Boolean is
+     (C64_Mode and then Current_Model /= VIC20);
+
+   function Basic_Start return Word is
+     (case Current_Model is
+        when VIC20 => Make_Word (Peek (16#2B#), Peek (16#2C#)),
+        when others =>
+          (if C64_Mode then 16#0801# else 16#1C01#));
    function Error_Message return String is (To_String (Err));
    function VDC_Enabled return Boolean is (Current_Model = C128);
    function Frame_Count return Natural is (Frames);
@@ -1122,6 +1425,19 @@ package body Machine is
       Hz : constant Natural := (if V = PAL then 985_248 else 1_022_727);
    begin
       Current_Standard := V;
+      if Current_Model = VIC20 then
+         V20.Set_Standard (if V = PAL then V20.PAL else V20.NTSC);
+         Drive1541.Set_Host_Clock (V20.Clock_Hz);
+         SID.Set_Clock (V20.Clock_Hz);
+         if Length (VIC20_ROM_Dir) > 0 then
+            declare
+               Dummy : Boolean;
+            begin
+               Load_VIC20_Kernal (Dummy);   --  6560 / 6561 KERNAL
+            end;
+         end if;
+         return;
+      end if;
       VIC.Cycles_Per_Line := (if V = PAL then 63 else 65);
       VIC.Lines_Per_Frame := (if V = PAL then 312 else 263);
       SID.Set_Clock (Hz);
@@ -1133,7 +1449,10 @@ package body Machine is
 
    function Standard return Video_Standard is (Current_Standard);
    function Frame_Rate return Float is
-     (if Current_Standard = PAL then 985_248.0 / 19_656.0
+     (if Current_Model = VIC20
+      then Float (V20.Clock_Hz) /
+           Float (V20.Cycles_Per_Line * V20.Lines_Per_Frame)
+      elsif Current_Standard = PAL then 985_248.0 / 19_656.0
       else 1_022_727.0 / 17_095.0);
    function Get_PC return Word is (CPU.PC);
 
@@ -1156,7 +1475,7 @@ package body Machine is
       MMU_P0L := 0; MMU_P0H := 0;
       MMU_P1L := 1; MMU_P1H := 0;
       P0H_Latch := 0; P1H_Latch := 0;
-      C64_Mode := Current_Model = C64;
+      C64_Mode := Current_Model /= C128;    --  (the VIC-20 uses no MMU)
 
       Cart_Bank := 0;
       Cart_Exrom := Cart_Info.Exrom_Low;
@@ -1172,6 +1491,9 @@ package body Machine is
       VIC.Has_C128_Regs := Current_Model = C128;
       SID.Reset;
       VDC.Reset;
+      VIA.Reset (V20_VIA1);
+      VIA.Reset (V20_VIA2);
+      V20.Reset;
       Keyboard.Release_All;
       Update_VIC_Bank;
       Rebuild_Map;
@@ -1200,7 +1522,7 @@ package body Machine is
    function Peek (Addr : Word) return Byte is
       Off : constant Integer := Read_Map (Hi (Addr));
    begin
-      if Addr < 2 then
+      if Addr < 2 and then Current_Model /= VIC20 then
          return (if Addr = 0 then Port_DDR else Port_Read);
       elsif Off >= 0 then
          return Mem (Off + Natural (Addr and 16#FF#));
@@ -1419,12 +1741,16 @@ package body Machine is
       end Search;
 
       function VIC_Screen (I : Natural) return Byte is
-        (Mem (16#0400# + I));
+        (if Current_Model = VIC20
+         then Mem (Natural (Mem (16#0288#)) * 256 + I)
+         else Mem (16#0400# + I));
       function VDC_Screen (I : Natural) return Byte is
         (VDC.Peek_VRAM (Natural (VDC.Peek_Reg (12)) * 256 +
                           Natural (VDC.Peek_Reg (13)) + I));
    begin
-      if Search (VIC_Screen'Access, 1000) then
+      if Search (VIC_Screen'Access,
+                 (if Current_Model = VIC20 then 506 else 1000))
+      then
          return True;
       end if;
       return Current_Model = C128 and then Search (VDC_Screen'Access, 2000);
@@ -1462,6 +1788,22 @@ package body Machine is
       if not Ok then
          return;
       end if;
+      if Current_Model = VIC20 then
+         --  Pick the RAM expansion the program was made for
+         V20_Block5 := False;
+         case Media.First_Load_Address is
+            when 16#1001# => V20_Mem := Unexpanded;
+            when 16#0401# => V20_Mem := Plus_3K;
+            when 16#1201# =>
+               if Blocks = 0 then
+                  V20_Mem := Plus_24K;
+               end if;
+            when 16#A000# =>
+               V20_Mem := Unexpanded;
+               V20_Block5 := True;        --  cartridge image in RAM
+            when others => null;
+         end case;
+      end if;
       Reset;
       Type_Queue := Null_Unbounded_String;
       declare
@@ -1473,7 +1815,21 @@ package body Machine is
          function Addr return String is (Natural'Image (Natural (LA)));
       begin
          Auto_Path := To_Unbounded_String (Path);
-         if Current_Model = C128 and then Media.Has_Boot_Sector then
+         if Current_Model = VIC20 then
+            if LA in 16#0401# | 16#1001# | 16#1201# or else LA = 0 then
+               Cmd := To_Unbounded_String ("LOAD" & Q & ",8" & NL & "RUN" & NL);
+            elsif LA = 16#A000# then
+               Cmd := To_Unbounded_String
+                 ("LOAD" & Q & ",8,1" & NL & "SYS64802" & NL);
+            else
+               Cmd := To_Unbounded_String
+                 ("LOAD" & Q & ",8,1" & NL & "SYS" & Addr & NL);
+            end if;
+            Auto_Command := Cmd;
+            Auto := Wait_Ready;
+            Auto_Frames := 0;
+            return;
+         elsif Current_Model = C128 and then Media.Has_Boot_Sector then
             --  Boot disk (e.g. CP/M): the KERNAL boots it by itself; stay
             --  "busy" (the GUI warps) until the drive has been quiet.
             Auto := Wait_Boot;
@@ -1550,7 +1906,7 @@ package body Machine is
                      End_A : constant Natural := Natural'Min
                        (Natural (Inject_Load) + Inject_Data'Length, 16#FFFF#);
                   begin
-                     if C64_Mode and then Inject_Load = 16#0801# then
+                     if C64_Mode and then Inject_Load = Basic_Start then
                         --  VARTAB / ARYTAB / STREND after the program
                         for Z in 0 .. 2 loop
                            Poke (Word (16#2D# + 2 * Z), Byte (End_A mod 256));
@@ -1569,7 +1925,13 @@ package body Machine is
             end if;
          when Wait_Ready =>
             Auto_Frames := Auto_Frames + 1;
-            if Screen_Contains ("READY.") or else Auto_Frames > 600 then
+            --  A VIC-20 is at READY before a 1541 has finished starting
+            --  up (about 2 seconds); a LOAD sent earlier goes unanswered.
+            if (Screen_Contains ("READY.")
+                and then (Current_Model /= VIC20 or else not Drive_On
+                          or else Auto_Frames > 100))
+              or else Auto_Frames > 600
+            then
                Type_Text (To_String (Auto_Command));
                Auto := Wait_Load;
                Auto_Frames := 0;
@@ -1641,6 +2003,12 @@ package body Machine is
       F : File_Type;
       S : Stream_Access;
    begin
+      if Current_Model = VIC20 then
+         Ok := False;
+         Err := To_Unbounded_String
+           ("snapshots are not supported for the VIC-20 yet");
+         return;
+      end if;
       Create (F, Out_File, Path);
       S := Stream (F);
       String'Write (S, Snapshot_Magic);
@@ -1701,6 +2069,12 @@ package body Machine is
       Magic : String (Snapshot_Magic'Range);
       P : Byte;
    begin
+      if Current_Model = VIC20 then
+         Ok := False;
+         Err := To_Unbounded_String
+           ("snapshots are not supported for the VIC-20 yet");
+         return;
+      end if;
       Ok := False;
       Open (F, In_File, Path);
       S := Stream (F);
@@ -1794,6 +2168,19 @@ package body Machine is
       Pulses : Natural;
    begin
       Total_Cycles := Total_Cycles + Long_Long_Integer (N);
+      if Current_Model = VIC20 then
+         if Tape.Present then
+            Tape.Tick (N, Pulses);
+            for P in 1 .. Pulses loop        --  read pulse on VIA2 CA1
+               VIA.Set_CA1 (V20_VIA2, False);
+               VIA.Set_CA1 (V20_VIA2, True);
+            end loop;
+         end if;
+         VIA.Tick (V20_VIA1, N);
+         VIA.Tick (V20_VIA2, N);
+         V20.Tick (N);
+         return;
+      end if;
       if Tape.Present then
          Tape.Tick (N, Pulses);
          if Pulses > 0 then
@@ -1998,8 +2385,38 @@ package body Machine is
       end if;
    end Claim_VIC;
 
+   function V20_VIA_Peek (V : VIA.Chip; Reg : Natural) return Byte is
+     (case Reg is
+        when 0 => V.ORB, when 1 | 15 => V.ORA, when 2 => V.DDRB,
+        when 3 => V.DDRA, when 4 => Byte (V.T1_Counter mod 256),
+        when 5 => Byte ((V.T1_Counter / 256) mod 256),
+        when 6 => Byte (V.T1_Latch mod 256),
+        when 7 => Byte ((V.T1_Latch / 256) mod 256),
+        when 8 => Byte (V.T2_Counter mod 256),
+        when 9 => Byte ((V.T2_Counter / 256) mod 256),
+        when 10 => V.SR, when 11 => V.ACR, when 12 => V.PCR,
+        when 13 => V.IFR or (if VIA.IRQ (V) then 16#80# else 0),
+        when others => V.IER or 16#80#);
+
    function IO_Peek (Addr : Word) return Byte is
    begin
+      if Current_Model = VIC20 then
+         case Addr is
+            when 16#9000# .. 16#90FF# =>
+               return (if (Addr and 15) in 3 | 4 then V20.Read (Natural (Addr and 15))
+                       else V20.Register (Natural (Addr and 15)));
+            when 16#9100# .. 16#93FF# =>
+               return (if (Addr and 16#10#) /= 0
+                       then V20_VIA_Peek (V20_VIA1, Natural (Addr and 15))
+                       elsif (Addr and 16#20#) /= 0
+                       then V20_VIA_Peek (V20_VIA2, Natural (Addr and 15))
+                       else 16#FF#);
+            when 16#9400# .. 16#97FF# =>
+               return (Color_RAM (Natural (Addr - 16#9400#)) and 15) or 16#F0#;
+            when others =>
+               return 16#FF#;
+         end case;
+      end if;
       case Addr is
          when 16#D000# .. 16#D3FF# =>
             return (if (Addr and 16#3F#) in 16#1E# | 16#1F# then 0
@@ -2021,6 +2438,11 @@ package body Machine is
    begin
       if Drive then
          return Drive1541.Peek (Addr);
+      end if;
+      if Addr >= 2 and then Read_Map (Hi (Addr)) = IO_Page
+        and then Current_Model = VIC20
+      then
+         return IO_Peek (Addr);
       end if;
       if Addr >= 2 and then Read_Map (Hi (Addr)) = IO_Page then
          case Addr is
@@ -2081,6 +2503,15 @@ package body Machine is
    ---------------------------------------------------------------------
    --  Main loop
    ---------------------------------------------------------------------
+
+   function Frame_Flag return Boolean is
+     (if Current_Model = VIC20 then V20.Frame_Done else VIC.Frame_Done);
+
+   procedure Clear_Frame_Flag is
+   begin
+      VIC.Frame_Done := False;
+      V20.Frame_Done := False;
+   end Clear_Frame_Flag;
 
    procedure End_Of_Frame is
    begin
@@ -2146,8 +2577,15 @@ package body Machine is
             end if;
          end if;
 
-         CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ or else REU.IRQ;
-         NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
+         if Current_Model = VIC20 then
+            --  RESTORE goes to VIA1 CA1; VIA1 drives NMI, VIA2 IRQ
+            VIA.Set_CA1 (V20_VIA1, not Keyboard.Restore_Down);
+            CPU.IRQ_Line := VIA.IRQ (V20_VIA2);
+            NMI_Now := VIA.IRQ (V20_VIA1);
+         else
+            CPU.IRQ_Line := VIC.IRQ or else CIA1.IRQ or else REU.IRQ;
+            NMI_Now := CIA2.IRQ or else Keyboard.Restore_Down;
+         end if;
          if NMI_Now and then not NMI_Prev then
             CPU.NMI_Pending := True;
             NMI_Count := NMI_Count + 1;
@@ -2191,7 +2629,7 @@ package body Machine is
       if Break_Flag then
          return;          --  stopped at a breakpoint until Resume
       end if;
-      while not VIC.Frame_Done loop
+      while not Frame_Flag loop
          if Debugging and then VIC.Stall_Cycles = 0 and then not Z80_Active
          then
             if Pause_Req then
@@ -2228,7 +2666,7 @@ package body Machine is
             end if;
          end if;
       end loop;
-      VIC.Frame_Done := False;
+      Clear_Frame_Flag;
       End_Of_Frame;
    end Run_Frame;
 
@@ -2238,8 +2676,8 @@ package body Machine is
          exit when Step_System;
       end loop;
       Watch_Hit := False;
-      if VIC.Frame_Done then
-         VIC.Frame_Done := False;
+      if Frame_Flag then
+         Clear_Frame_Flag;
          End_Of_Frame;
       end if;
       Skip_Break := True;

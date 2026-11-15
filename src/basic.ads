@@ -12,6 +12,7 @@
 --  "?" is PRINT, "^" the power operator ("↑"), "_" is "←", "£" also works.
 
 with Types; use Types;
+with Interfaces; use type Interfaces.Unsigned_16;
 with Ada.Strings.Unbounded;
 
 package Basic is
@@ -19,8 +20,12 @@ package Basic is
    type Dialect is (V2, V7);   --  C64 BASIC 2.0, C128 BASIC 7.0
 
    function Is_Source (Path : String) return Boolean;   --  .bas
+   Load_Override : Word := 0;
+   --  Where to put tokenized programs instead of the dialect's default
+   --  (the VIC-20 keeps BASIC at $1001, $0401 or $1201); 0 = default.
    function Load_Address (D : Dialect) return Word is
-     (if D = V2 then 16#0801# else 16#1C01#);
+     (if Load_Override /= 0 then Load_Override
+      elsif D = V2 then 16#0801# else 16#1C01#);
 
    procedure Tokenize_File (Path : String; D : Dialect);
    procedure Tokenize_Text (Text : String; D : Dialect);

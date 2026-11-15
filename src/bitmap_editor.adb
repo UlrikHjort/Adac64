@@ -38,7 +38,7 @@ with Cairo.Png;
 with Types; use Types;
 with Interfaces; use Interfaces;
 with Video;
-with Machine;
+with Machine; use type Machine.Model_Type;
 with Settings;
 with Bitmap_Data; use Bitmap_Data;
 
@@ -147,6 +147,13 @@ package body Bitmap_Editor is
 
    procedure Send_To_Emulator (Quiet : Boolean := False) is
    begin
+      if Machine.Model = Machine.VIC20 then
+         if not Quiet then
+            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works with "
+                             & "the C64 and C128");
+         end if;
+         return;
+      end if;
       if Machine.VIC_Bank_Address /= 0 then
          if not Quiet then
             Status.Set_Text ("show in emulator needs VIC bank 0 (e.g. at the "

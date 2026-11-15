@@ -1,7 +1,49 @@
 # AdaC64
 
-A Commodore 64 and Commodore 128 emulator written in Ada 2012 with GtkAda.
-It uses the ROM images that ship with VICE (`/usr/share/vice` by default).
+A Commodore 64, Commodore 128 and VIC-20 emulator written in Ada 2012 with
+GtkAda, with Forge, an assembler IDE, debugger and graphics editors.
+The Commodore ROMs are not included; see [ROMs](#roms) for which files are
+needed and where they go.
+
+## ROMs
+
+The machines need the original Commodore ROMs. They are still under
+copyright, so they are not part of this project and must not be added to
+the repository (`roms/` is in `.gitignore`). Use dumps of your own
+machines, or the ROM files that come with an emulator distribution that
+includes them (the official VICE releases do; some Linux packages of VICE
+leave some out). The files are found by these names:
+
+| Machine | Where | Files |
+|---|---|---|
+| C64 | `<roms>/C64/` | `basic-901226-01.bin`, `kernal-901227-03.bin`, `chargen-901225-01.bin` |
+| C128 | `<roms>/C128/` | `kernal-318020-05.bin`, `basiclo-318018-04.bin`, `basichi-318019-04.bin`, `chargen-390059-01.bin`, `basic64-901226-01.bin`, `kernal64-901227-03.bin` |
+| VIC-20 | `roms/vic20/` (or `<roms>/VIC20/` with VICE names) | `basic.901486-01.bin`, `characters.901460-03.bin`, `kernal.901486-07.bin` (PAL), `kernal.901486-06.bin` (NTSC) |
+| 1541 | `roms/drives/` or `<roms>/DRIVES/` | `1541-II.251968-03.bin`, or `dos1541.bin` = `1541-c000.325302-01.bin` + `1541-e000.901229-05.bin` |
+| 1571 | `roms/drives/` | `1571-rom.310654-05.bin` |
+
+`<roms>` is `/usr/share/vice` unless `--roms DIR` says otherwise;
+`roms/...` is looked for next to `bin/` and in the current directory. To
+check that you have the expected versions (`sha1sum FILE`):
+
+    79015323128650c742a3694c9429aa91f355905e  basic-901226-01.bin
+    1d503e56df85a62fee696e7618dc5b4e781df1bb  kernal-901227-03.bin
+    adc7c31e18c7c7413d54802ef2f4193da14711aa  chargen-901225-01.bin
+    ceb6e1a1bf7e08eb9cbc651afa29e26adccf38ab  kernal-318020-05.bin
+    d53a7884404f7d18ebd60dd3080c8f8d71067441  basiclo-318018-04.bin
+    c4fb4a714e48a7bf6c28659de0302183a0e0d6c0  basichi-318019-04.bin
+    29ed066d513f2d5c09ff26d9166ba23c2afb2b3f  chargen-390059-01.bin
+    587d1e90950675ab6b12d91248a3f0d640d02e8d  basic.901486-01.bin
+    4fd85ab6647ee2ac7ba40f729323f2472d35b9b4  characters.901460-03.bin
+    ce0137ed69f003a299f43538fa9eee27898e621e  kernal.901486-07.bin
+    06de7ec017a5e78bd6746d89c2ecebb646efeb19  kernal.901486-06.bin
+    d3b78c3dbac55f5199f33f3fe0036439811f7fb3  1541-II.251968-03.bin
+    8e0547430135ba462525c224e76356bd3d430f11  1541-c000.325302-01.bin
+    f5d60777440829e46dc91285e662ba072acd2d8b  1541-e000.901229-05.bin
+    f1be619c106641a685f6609e4d43d6fc9eac1e70  1571-rom.310654-05.bin
+
+Without a drive ROM the emulator still works, with KERNAL-level disk
+access instead of an emulated drive (see Drive 8 below).
 
 ## Build and run
 
@@ -42,6 +84,23 @@ Options: `--roms DIR`, `--drive-rom FILE`, `--fast-drive`, `--attach FILE`
 | Z80 (C128) | Full instruction set incl. undocumented IXH/IXL and DDCB copies, IM 0/1/2, NMI. Runs the Z80 BIOS at power-on, then hands over to the 8502 as on the real machine; CPU switching through the MMU. Boots CP/M 3.0. |
 | C128 extras | 2 MHz mode, extended keyboard (`$D02F`), 40/80 key, 2 KB banked colour RAM. |
 
+### VIC-20
+
+Machine → Commodore VIC-20 (or `--vic20`, with `3k`, `8k`, `16k`, `24k` or
+`35k` for a RAM expansion): the 6561 (PAL) / 6560 (NTSC) VIC with its
+22 x 23 text screen, multicolour characters, double-height characters,
+reverse mode and its sound (three square-wave voices and noise, pitch
+checked against VICE), the two 6522 VIAs (keyboard, joystick, serial bus,
+Datasette, RESTORE as NMI) and the memory map with the expansion blocks.
+The KERNAL sizes RAM itself, so the start-up screen shows 3583, 6655, 11775,
+19967 or 28159 bytes free as on the real machine. The 1541 works as on the
+C64 (fast load or the emulated drive), and autostart picks the expansion a
+program was made for from its load address ($1001 unexpanded, $0401 +3K,
+$1201 +8K or more, $A000 cartridge images run from RAM). Forge builds BASIC
+and assembly programs for wherever BASIC starts on the configured VIC-20;
+the graphics editors work with the C64 and C128 only. Not there yet: VIC-20
+`.crt` cartridges, light pen / paddles, snapshots.
+
 ### Drive 8
 
 **True drive emulation (default for D64 and G64 images):** a complete 1541
@@ -56,14 +115,12 @@ file (G64 tracks are written back in place); read-only image files appear as
 write-protected disks. This needs a
 1541 ROM (16 KB), searched in this order: `--drive-rom FILE`,
 `<roms>/DRIVES/dos1541-325302-01+901229-05.bin`, `<roms>/DRIVES/dos1541`,
-`roms/drives/dos1541.bin` (next to `bin/`), `roms/drives/1541-II.251968-03.bin`.
-The ROMs are available from
-<https://www.zimmers.net/anonftp/pub/cbm/firmware/drives/new/1541/>;
-`dos1541.bin` is `1541-c000.325302-01.bin` followed by `1541-e000.901229-05.bin`.
+`roms/drives/dos1541.bin` (next to `bin/`), `roms/drives/1541-II.251968-03.bin`
+(see [ROMs](#roms)); `dos1541.bin` is `1541-c000.325302-01.bin` followed by
+`1541-e000.901229-05.bin`.
 
-**1571** (File menu or `--drive 1571`; needs `1571-rom.310654-05.bin` from
-<https://www.zimmers.net/anonftp/pub/cbm/firmware/drives/new/1571/> in
-`roms/drives/`): the C128's drive with its 32 KB DOS, 1/2 MHz CPU clock,
+**1571** (File menu or `--drive 1571`; needs `1571-rom.310654-05.bin` in
+`roms/drives/`, see [ROMs](#roms)): the C128's drive with its 32 KB DOS, 1/2 MHz CPU clock,
 double-sided head (D71 images, 1328 blocks), a WD1770 (no MFM disks) and
 its CIA for the C128 fast serial / burst mode, which the C128 KERNAL and CP/M
 use automatically (several times faster than a 1541; CP/M boots in ~40 s at
@@ -115,9 +172,8 @@ trigger, IRQ). The CPU is halted during DMA as on the real hardware.
 
 ### CP/M
 
-The C128's Z80 boots CP/M Plus from the official Commodore system disk (a
-D64; available at <https://www.zimmers.net/anonftp/pub/cbm/demodisks/c128/>;
-`cpm.system.622-3297432.d64.gz` is the latest, 28 May 87, version, which
+The C128's Z80 boots CP/M Plus from the Commodore CP/M system disk (a D64,
+not included; the latest version, `cpm.system.622-3297432`, 28 May 87,
 also supports an REU as RAM disk `M:`). Attach or autostart it on the C128;
 the KERNAL boots it from its boot sector (40 or 80 columns, per the 40/80
 key). Autostarting a boot disk runs in warp until the drive is quiet, so the
@@ -372,6 +428,7 @@ Disk images can also be dropped onto the window.
     src/mos6502.*    6502 CPU core (generic over the bus)
     src/z80.*        Z80 CPU core (C128 / CP/M)
     src/vic_ii.*     VIC-II        src/sid.*      SID
+    src/vic_i.*      VIC-20 VIC (6560/6561) with its sound
     src/cia.*        CIA           src/vdc.*      VDC
     src/machine.*    memory maps, I/O, MMU, KERNAL traps, frame loop
     src/crt.*        CRT cartridge files

@@ -45,7 +45,7 @@ with Pango.Layout;
 with GNAT.Strings;
 
 with Types; use Types;
-with Machine;
+with Machine; use type Machine.Model_Type;
 with Asm;
 with Basic;
 use type Basic.Dialect;
@@ -523,7 +523,9 @@ package body Forge is
       T : String := C64_Template;
       I : constant Natural := Index (T, "*= $0801");
    begin
-      if not Machine.In_C64_Mode and then I > 0 then
+      if Machine.Model = Machine.VIC20 and then I > 0 then
+         T (I .. I + 7) := "*= $1001";          --  (unexpanded VIC-20)
+      elsif not Machine.In_C64_Mode and then I > 0 then
          T (I .. I + 7) := "*= $1c01";
       end if;
       return T;
@@ -769,7 +771,15 @@ package body Forge is
    end Report;
 
    function Dialect return Basic.Dialect is
-     (if Machine.In_C64_Mode then Basic.V2 else Basic.V7);
+     (if Machine.In_C64_Mode or else Machine.Model = Machine.VIC20
+      then Basic.V2 else Basic.V7);
+
+   --  Programs go where BASIC starts on the running machine
+   procedure Set_Basic_Load is
+   begin
+      Basic.Load_Override :=
+        (if Machine.Model = Machine.VIC20 then Machine.Basic_Start else 0);
+   end Set_Basic_Load;
 
    function Build_Basic (T : Positive) return Boolean is
       PRG : Unbounded_String;
@@ -781,6 +791,7 @@ package body Forge is
              (if Dialect = Basic.V2 then "V2, C64)" else "7.0, C128)"));
       Print ("");
       Basic.Report := Report'Access;
+      Set_Basic_Load;
       Basic.Build (Path, Dialect, PRG, Ok);
       Last_PRG := PRG;
       Last_Source := To_Unbounded_String (Path);
@@ -900,8 +911,7 @@ package body Forge is
       Low  : constant Word := Asm.Low_Address;
       High : constant Word := Asm.High_Address;
       Data : Byte_Array (0 .. Natural (High - Low));
-      Basic_Start : constant Word :=
-        (if Machine.In_C64_Mode then 16#0801# else 16#1C01#);
+      Basic_Start : constant Word := Machine.Basic_Start;
       Cmd : constant String :=
         (if Asm.Has_Basic_Stub and then Low = Basic_Start then "RUN"
          else "SYS" & Natural'Image (Natural (Asm.Start_Address)));
@@ -1242,7 +1252,7 @@ package body Forge is
             declare
                Text : constant String :=
                  Basic.Detokenize (Machine.Peek'Access,
-                                   Basic.Load_Address (Dialect), Dialect);
+                                   Machine.Basic_Start, Dialect);
             begin
                if Text = "" then
                   Print ("no BASIC program in the emulator's memory");

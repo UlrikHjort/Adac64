@@ -2,6 +2,7 @@
 --
 --  Usage: adac64 [options] [file.d64|file.t64|file.prg]
 --    --c64 / --c128     start as a Commodore 64 / 128 (default: last used)
+--    --vic20 [3k|8k|16k|24k|35k]  start as a VIC-20 (with RAM expansion)
 --    --80 / --40        C128: 40/80 key down (80 columns) / up
 --    --roms DIR         ROM directory (default /usr/share/vice)
 --    --drive-rom FILE   1541 DOS ROM (16 KB); default: search ROM dirs
@@ -100,6 +101,13 @@ procedure AdaC64 is
                   or else Ends (".gif")));
    end Forge_File_Type;
 
+   --  BASIC start for the VIC-20 memory configuration
+   function VIC20_Basic_Start return Types.Word is
+     (case Machine.VIC20_Memory_Config is
+        when Machine.Unexpanded => 16#1001#,
+        when Machine.Plus_3K => 16#0401#,
+        when others => 16#1201#);
+
    function Unescape (S : String) return String is
       R : Unbounded_String;
       J : Positive := S'First;
@@ -159,6 +167,9 @@ begin
                   C128_Wanted := C128_Wanted or else Argument (K) = "--c128";
                end loop;
                Basic.Report := Print_Line'Unrestricted_Access;
+               if Machine."=" (Model, Machine.VIC20) then
+                  Basic.Load_Override := VIC20_Basic_Start;
+               end if;
                Basic.Build (Argument (I + 1),
                             (if C128_Wanted then Basic.V7 else Basic.V2),
                             PRG, Ok);
@@ -221,6 +232,25 @@ begin
          elsif A = "--c128" then
             Model := Machine.C128;
             Model_Given := True;
+         elsif A = "--vic20" then
+            Model := Machine.VIC20;
+            Model_Given := True;
+            if I < Argument_Count then
+               declare
+                  E : constant String := Argument (I + 1);
+               begin
+                  if E in "3k" | "8k" | "16k" | "24k" | "35k" | "0k" then
+                     I := I + 1;
+                     Machine.Set_VIC20_Memory
+                       (if E = "3k" then Machine.Plus_3K
+                        elsif E = "8k" then Machine.Plus_8K
+                        elsif E = "16k" then Machine.Plus_16K
+                        elsif E = "24k" then Machine.Plus_24K
+                        elsif E = "35k" then Machine.Plus_35K
+                        else Machine.Unexpanded);
+                  end if;
+               end;
+            end if;
          elsif A = "--c64" then
             Model := Machine.C64;
             Model_Given := True;
@@ -337,6 +367,9 @@ begin
          PRG : Unbounded_String;
       begin
          Basic.Report := Print_Line'Unrestricted_Access;
+         if Machine."=" (Model, Machine.VIC20) then
+            Basic.Load_Override := VIC20_Basic_Start;
+         end if;
          Basic.Build (To_String (File),
                       (if Machine."=" (Model, Machine.C128) then Basic.V7
                        else Basic.V2),

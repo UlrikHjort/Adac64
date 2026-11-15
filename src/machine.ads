@@ -1,4 +1,4 @@
---  The complete C64 / C128 system: memory map, I/O dispatch, CPU, chips,
+--  The complete C64 / C128 / VIC-20 system: memory map, I/O dispatch, CPU, chips,
 --  KERNAL load/save traps and the per-frame run loop.
 
 with Ada.Strings.Unbounded;
@@ -7,7 +7,19 @@ with Drive1541;
 
 package Machine is
 
-   type Model_Type is (C64, C128);
+   type Model_Type is (C64, C128, VIC20);
+
+   --  VIC-20 RAM expansion (takes effect at the next reset):
+   --    +3K  block 0 ($0400-$0FFF)       BASIC at $0401, screen $1E00
+   --    +8K  block 1 ($2000-$3FFF)       BASIC at $1201, screen $1000
+   --    +16K / +24K  blocks 1-2 / 1-3
+   --    +35K everything incl. block 5 ($A000-$BFFF)
+   type VIC20_Memory is (Unexpanded, Plus_3K, Plus_8K, Plus_16K, Plus_24K,
+                         Plus_35K);
+   procedure Set_VIC20_Memory (M : VIC20_Memory);
+   function VIC20_Memory_Config return VIC20_Memory;
+   function Basic_Start return Word;
+   --  Where BASIC programs start on the running machine (TXTTAB)
 
    procedure Power_On (M : Model_Type; ROM_Dir : String; Ok : out Boolean);
    --  Load the ROM set for the model and perform a hard reset.

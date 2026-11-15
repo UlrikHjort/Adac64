@@ -32,7 +32,7 @@ with Cairo; use Cairo;
 with Types; use Types;
 with Interfaces; use Interfaces;
 with Video;
-with Machine;
+with Machine; use type Machine.Model_Type;
 with Settings;
 with Sprite_Data; use Sprite_Data;
 
@@ -121,6 +121,13 @@ package body Sprite_Editor is
       function Bit (On : Boolean; Old : Byte) return Byte is
         (if On then Old or 1 else Old and 16#FE#);
    begin
+      if Machine.Model = Machine.VIC20 then
+         if not Quiet then
+            Status.Set_Text ("the VIC-20 has no VIC-II: this editor works with "
+                             & "the C64 and C128");
+         end if;
+         return;
+      end if;
       if VIC_Bank /= 0 then
          if not Quiet then
             Status.Set_Text ("show in emulator needs VIC bank 0 (e.g. at the" &

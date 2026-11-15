@@ -82,7 +82,8 @@ package body GUI is
    Item_Pause   : Gtk_Check_Menu_Item;
    Item_TDE     : Gtk_Check_Menu_Item;
    Item_FastLd  : Gtk_Check_Menu_Item;
-   Item_C64, Item_C128 : Gtk_Radio_Menu_Item;
+   Item_C64, Item_C128, Item_VIC20 : Gtk_Radio_Menu_Item;
+   V20_Items : array (Machine.VIC20_Memory) of Gtk_Radio_Menu_Item;
    Updating_Menu : Boolean := False;
    Was_VDC : Boolean := False;
 
@@ -109,11 +110,21 @@ package body GUI is
       Dlg.Destroy;
    end Message;
 
+   function V20_Mem_Name return String is
+     (case Machine.VIC20_Memory_Config is
+        when Machine.Unexpanded => "",
+        when Machine.Plus_3K => " +3K",
+        when Machine.Plus_8K => " +8K",
+        when Machine.Plus_16K => " +16K",
+        when Machine.Plus_24K => " +24K",
+        when Machine.Plus_35K => " +35K");
+
    function Model_Name return String is
      (case Machine.Model is
         when C64 => "C64",
         when C128 => (if Machine.In_C64_Mode then "C128 (C64 mode)"
-                      else "C128"));
+                      else "C128"),
+        when VIC20 => "VIC-20" & V20_Mem_Name);
 
    function Short (S : String) return String is
      (if S'Length > 24 then S (S'First .. S'First + 21) & ".." else S);
@@ -166,11 +177,15 @@ package body GUI is
       Item_TDE.Set_Active (Machine.True_Drive);
       Item_FastLd.Set_Active (Machine.Fast_Kernal_Load);
       Item_TDE.Set_Sensitive (Machine.Drive_ROM_Found);
-      if Machine.Model = C64 then
-         Item_C64.Set_Active (True);
-      else
-         Item_C128.Set_Active (True);
-      end if;
+      case Machine.Model is
+         when C64 => Item_C64.Set_Active (True);
+         when C128 => Item_C128.Set_Active (True);
+         when VIC20 => Item_VIC20.Set_Active (True);
+      end case;
+      V20_Items (Machine.VIC20_Memory_Config).Set_Active (True);
+      for M in Machine.VIC20_Memory loop
+         V20_Items (M).Set_Sensitive (Machine.Model = VIC20);
+      end loop;
       Item_VDC.Set_Sensitive (Machine.Model = C128);
       Item_4080.Set_Sensitive (Machine.Model = C128);
       Updating_Menu := False;
@@ -578,7 +593,11 @@ package body GUI is
       Settings.Set ("drive", (if Machine.Drive_Type = Drive1541.D1571
                               then "1571" else "1541"));
       Settings.Set ("reu", Integer (REU.Size));
-      Settings.Set ("model", (if Machine.Model = C128 then "c128" else "c64"));
+      Settings.Set ("model", (case Machine.Model is
+                                 when C128 => "c128", when VIC20 => "vic20",
+                                 when C64 => "c64"));
+      Settings.Set ("vic20mem",
+                    Machine.VIC20_Memory'Image (Machine.VIC20_Memory_Config));
       Settings.Set ("key4080", Machine.Key_4080_Down);
       Settings.Set ("joyport", Integer (Keyboard.Joystick_Port));
       Settings.Set ("joykeys",
@@ -673,9 +692,32 @@ package body GUI is
         and then Machine.Model /= C128
       then
          Start_Machine (C128);
+      elsif Gtk_Radio_Menu_Item (Item) = Item_VIC20
+        and then Machine.Model /= VIC20
+      then
+         Start_Machine (VIC20);
       end if;
       Sync_Menu;
    end On_Model;
+
+   procedure On_V20_Memory (Item : access Gtk_Check_Menu_Item_Record'Class)
+   is
+   begin
+      if Updating_Menu or else not Item.Get_Active then
+         return;
+      end if;
+      for M in Machine.VIC20_Memory loop
+         if Gtk_Radio_Menu_Item (Item) = V20_Items (M)
+           and then M /= Machine.VIC20_Memory_Config
+         then
+            Machine.Set_VIC20_Memory (M);
+            if Machine.Model = VIC20 then
+               Machine.Reset;          --  the KERNAL sizes RAM at power-on
+            end if;
+         end if;
+      end loop;
+      Sync_Menu;
+   end On_V20_Memory;
 
    procedure On_Warp (Item : access Gtk_Check_Menu_Item_Record'Class) is
    begin
@@ -1167,7 +1209,7 @@ package body GUI is
       Mute, Item_Pos, Item_Int, Item_CRT : Gtk_Check_Menu_Item;
       Start_Model : Model_Type := Model;
       Model_Group, Joy_Group, Keyset_Group, Host_Group, REU_Group,
-      Drive_Group, Std_Group, SID_Group :
+      Drive_Group, Std_Group, SID_Group, V20_Group :
         Widget_SList.GSlist :=
         Widget_SList.Null_List;
       Timer : Glib.Main.G_Source_Id;
@@ -1180,8 +1222,16 @@ package body GUI is
       Settings.Load;
       if not Model_Given then
          Start_Model := (if Settings.Get ("model", "c64") = "c128" then C128
+                         elsif Settings.Get ("model", "c64") = "vic20" then VIC20
                          else C64);
       end if;
+      begin
+         Machine.Set_VIC20_Memory
+           (Machine.VIC20_Memory'Value
+              (Settings.Get ("vic20mem", "UNEXPANDED")));
+      exception
+         when Constraint_Error => null;
+      end;
       if not Key80_Given then
          Machine.Key_4080_Down := Settings.Get ("key4080", False);
       end if;
@@ -1240,6 +1290,20 @@ package body GUI is
                  On_Model'Access);
       Add_Radio (M_Machine, "Commodore 128", Model_Group, Item_C128,
                  On_Model'Access);
+      Add_Radio (M_Machine, "Commodore VIC-20", Model_Group, Item_VIC20,
+                 On_Model'Access);
+      for M in Machine.VIC20_Memory loop
+         Add_Radio (M_Machine,
+                    "   VIC-20 RAM: " &
+                    (case M is
+                       when Machine.Unexpanded => "unexpanded (5K)",
+                       when Machine.Plus_3K => "+3K",
+                       when Machine.Plus_8K => "+8K",
+                       when Machine.Plus_16K => "+16K",
+                       when Machine.Plus_24K => "+24K",
+                       when Machine.Plus_35K => "+35K (all blocks)"),
+                    V20_Group, V20_Items (M), On_V20_Memory'Access);
+      end loop;
       Add_Radio (M_Machine, "PAL (Europe, 50 Hz)", Std_Group, Item_PAL,
                  On_Standard'Access);
       Add_Radio (M_Machine, "NTSC (America, 60 Hz)", Std_Group, Item_NTSC,
