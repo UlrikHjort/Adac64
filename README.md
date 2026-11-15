@@ -30,7 +30,7 @@ leave some out). The files are found by these names:
 | C64 | `<roms>/C64/` | `basic-901226-01.bin`, `kernal-901227-03.bin`, `chargen-901225-01.bin` |
 | C128 | `<roms>/C128/` | `kernal-318020-05.bin`, `basiclo-318018-04.bin`, `basichi-318019-04.bin`, `chargen-390059-01.bin`, `basic64-901226-01.bin`, `kernal64-901227-03.bin` |
 | VIC-20 | `roms/vic20/` (or `<roms>/VIC20/` with VICE names) | `basic.901486-01.bin`, `characters.901460-03.bin`, `kernal.901486-07.bin` (PAL), `kernal.901486-06.bin` (NTSC) |
-| C16 / Plus/4 | `roms/plus4/` (or `<roms>/PLUS4/`) | `basic-318006-01.bin`, `kernal-318004-05.bin` (PAL), `kernal-318005-05.bin` (NTSC); the Plus/4's 3-plus-1 programs: `3plus1-317053-01.bin`, `3plus1-317054-01.bin` (optional). The zimmers.net names (`basic.318006-01.bin`, `3plus1low.317053-01.bin`, ...) work too |
+| C16 / Plus/4 | `roms/plus4/` (or `<roms>/PLUS4/`) | `basic-318006-01.bin`, `kernal-318004-05.bin` (PAL), `kernal-318005-05.bin` (NTSC); the Plus/4's 3-plus-1 programs: `3plus1-317053-01.bin`, `3plus1-317054-01.bin` (optional). The names with dots (`basic.318006-01.bin`, `3plus1low.317053-01.bin`, ...) work too |
 | PET 4032 | `roms/pet/` (or `<roms>/PET/`) | `basic-4.901465-23-20-21.bin`, `kernal-4.901465-22.bin`, `characters-2.901447-10.bin`, `edit-4-40-n-50Hz.901498-01.bin` (PAL), `edit-4-40-n-60Hz.901499-01.bin` (NTSC) |
 | 1541 | `roms/drives/` or `<roms>/DRIVES/` | `1541-II.251968-03.bin`, or `dos1541.bin` = `1541-c000.325302-01.bin` + `1541-e000.901229-05.bin` |
 | 1571 | `roms/drives/` | `1571-rom.310654-05.bin` |
@@ -635,3 +635,8 @@ Disk images can also be dropped onto the window.
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
                      mkd71.py double-sided image builder, mktap.py
                      KERNAL-format TAP encoder
+
+## License
+
+MIT; see [LICENSE](LICENSE). The Commodore ROMs are not part of this
+project and are not covered by it (see [ROMs](#roms)).

@@ -638,7 +638,7 @@ package body Machine.VIC20_System is
 
    VIC20_ROM_Dir : Unbounded_String;
 
-   --  VIC-20 ROMs: roms/vic20 (zimmers.net names) next to the program or
+   --  VIC-20 ROMs: roms/vic20 (dotted names) next to the program or
    --  in the current directory, or <roms>/VIC20 (VICE names)
    function Find_VIC20_ROM (Names : String) return String is
       Exe_Dir : constant String :=
