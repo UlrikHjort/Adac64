@@ -50,4 +50,24 @@ if command -v cartconv >/dev/null; then
   cartconv -t vic20 -i $T/c8.prg -o $T/c8.crt >/dev/null 2>&1
   cart "VICE .crt" $T/c8.crt 2E
 fi
+# video timing: VIA1 timer between two passes of raster line 0
+$B --asm tests/vic20_frame.asm -o $T/frame.prg >/dev/null
+for std in "pal 22143" "ntsc 16956"; do
+  set -- $std
+  R=$($B --vic20 --$1 --headless 300 --png $T/s.png --monitor "m fb fc" $T/frame.prg | grep '^00FB' | cut -c7-11)
+  V=$(python3 -c "lo,hi='$R'.split(); print(0xffff-(int(hi,16)*256+int(lo,16)))")
+  [ "$V" = "$2" ] || fail "$1 frame timing ($V cycles)"
+  echo "vic20: $1 frame: $V cycles measured (71 x 312 / 65 x 261 minus the loop)"
+done
+# keyboard: every key typed through the matrix arrives as the right PETSCII
+$B --vic20 8k --basic tests/vic20_keys.bas >/dev/null
+mv tests/vic20_keys.prg $T/keys.prg
+K='abcdefghijklmnopqrstuvwxyz0123456789+-*/=@:;,.!"#$%&()<>?'
+$B --vic20 8k --headless 2600 --png $T/s.png --keys-at 400 "$K" --dump $T/mem.bin $T/keys.prg >/dev/null
+python3 -I -c "
+import sys
+t=sys.argv[1]; m=open(sys.argv[2],'rb').read()
+exp=bytes(ord(c)-32 if 'a'<=c<='z' else ord(c) for c in t)
+sys.exit(0 if m[0x1300:0x1300+len(t)]==exp else 1)" "$K" $T/mem.bin || fail "keyboard"
+echo "vic20: keyboard: all ${#K} keys arrive as the right characters"
 rm -rf $T
