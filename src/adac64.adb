@@ -82,6 +82,9 @@ procedure AdaC64 is
    I        : Positive := 1;
    Ok       : Boolean;
 
+   --  Images only go to Forge when it is started as Forge
+   function Open_Forge_Image return Boolean is (GUI.Open_Forge);
+
    --  Files the forge opens itself (sources, sprites, charsets)
    function Forge_File_Type (Path : String) return Boolean is
       L : constant String := Ada.Characters.Handling.To_Lower (Path);
@@ -90,7 +93,11 @@ procedure AdaC64 is
    begin
       return Asm.Is_Source (Path) or else Basic.Is_Source (Path)
         or else Ends (".spr") or else Ends (".chr") or else Ends (".64c")
-        or else Ends (".scr");
+        or else Ends (".scr") or else Ends (".kla") or else Ends (".koa")
+        or else Ends (".art") or else Ends (".dd")
+        or else (Open_Forge_Image and then
+                 (Ends (".png") or else Ends (".jpg") or else Ends (".jpeg")
+                  or else Ends (".gif")));
    end Forge_File_Type;
 
    function Unescape (S : String) return String is

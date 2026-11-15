@@ -4,7 +4,7 @@ project Debug_Test is
    for Object_Dir use "../obj/tests_dbg";
    for Exec_Dir use "../bin";
    for Main use ("debug_test.adb", "sprite_test.adb", "charset_test.adb",
-                     "screen_test.adb");
+                     "screen_test.adb", "bitmap_test.adb");
    package Compiler is
       for Default_Switches ("Ada") use ("-O2", "-gnat2012", "-g");
    end Compiler;

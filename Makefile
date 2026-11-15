@@ -16,6 +16,7 @@ tests: all
 	bin/sprite_test
 	bin/charset_test
 	bin/screen_test
+	bin/bitmap_test
 	sh tests/basic_test.sh
 	sh tests/disk_test.sh
 	@if [ -f $(KLAUS) ]; then bin/cpu_test $(KLAUS); else \

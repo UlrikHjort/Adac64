@@ -304,6 +304,32 @@ their line like assembler errors. On the command line,
 from the file names); `tests/disk_test.sh` checks the files and BAM of
 such a disk and loads the program from it through the emulated drive.
 
+### Bitmap editor
+
+Forge → Tools → Bitmap editor (Ctrl+B), or open a Koala (`.kla`, `.koa`),
+Art Studio (`.art`) or Doodle (`.dd`) picture. Pictures stay in the C64's
+own format, so the VIC-II's limits always hold: hires is 320 x 200 with
+two colours per 8 x 8 cell, multicolour 160 x 200 (double-wide pixels)
+with the background plus three colours per cell. Painting a colour a cell
+has no room for replaces the cell's least-used colour (reported as a
+colour clash). The status line shows the colours of the cell under the
+mouse; G shows the cell grid.
+
+Left and right button paint with two colours (pick them by clicking the
+palette with that button); tools: pencil, line, fill and pick. Switching
+between hires and multicolour converts the picture. *Import image* (or
+opening a `.png` / `.jpg` / `.gif` in Forge) scales a photo to fit,
+reduces it to the 16 colours (optionally with Floyd-Steinberg dithering)
+and picks the best colours per cell.
+
+*Save* writes Koala for multicolour and Art Studio for hires; *Export
+.asm* writes a complete program that shows the picture (F5 in Forge runs
+it), *Export PNG* a 320 x 200 image. *Show in emulator* / *Live* display
+the picture on the C64 (bitmap at `$2000`), *Grab from emulator* takes the
+bitmap a running program shows. `tests/bitmap_test` assembles the
+exported viewer, runs it and checks that the VIC-II shows exactly the
+editor's picture in both modes.
+
 ## Keys
 
 Keyboard mapping is symbolic by default: type the character you want.
@@ -351,9 +377,11 @@ Disk images can also be dropped onto the window.
     src/sprite_*     sprite editor (data model / window)
     src/charset_*    charset editor (data model / window)
     src/screen_*     screen editor (data model / window)
+    src/bitmap_*     bitmap editor (data model / window)
     src/disk_image.* D64 writer
     share/adac64/    6502 syntax highlighting (language-specs/*.lang)
-    tests/           CPU, keyboard, debugger, sprite, charset, screen
+    tests/           CPU, keyboard, debugger, sprite, charset, screen,
+                     bitmap,
                      BASIC and disk tests,
                      mkd64.py image builder
     tests/tools/     batch game runner, 6502 disassembler, D64/G64 readers,
