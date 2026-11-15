@@ -12,10 +12,17 @@ with Types; use Types;
 
 package Paddles is
 
-   type Mode_Kind is (Off, Mouse, Joystick);
+   type Mode_Kind is (Off, Mouse, Joystick, Light_Pen);
    Mode : Mode_Kind := Off;
+   --  Light_Pen (VIC-20): the mouse is a light pen; holding the left button
+   --  is "pen on the screen" (the VIC latches the beam position when it
+   --  passes the pen, and the pen's switch shows on the fire line).
 
-   function Active return Boolean is (Mode /= Off);
+   function Active return Boolean is (Mode in Mouse | Joystick);
+   function Pen_Active return Boolean is (Mode = Light_Pen);
+
+   Pen_X, Pen_Y : Float := 0.5;     --  pen position across the picture
+   Pen_Down : Boolean := False;
 
    Value : array (1 .. 2) of Byte := (others => 128);
    Fire  : array (1 .. 2) of Boolean := (others => False);
@@ -29,6 +36,7 @@ package Paddles is
    --  joystick bits (0 up, 1 down, 2 left, 3 right, 4 fire).
 
    function Fire_Bits return Byte;
+   function Pen_Bits return Byte is (if Pen_Down then 16 else 0);
    --  The paddle buttons as joystick bits: paddle 1 = left (bit 2),
    --  paddle 2 = right (bit 3)
 

@@ -15,5 +15,10 @@ if [ -f roms/vic20/basic.901486-01.bin ]; then
   R=$($B --vic20 --paddles mouse --paddle-pos 0.25 0.75 --headless 300 --png $T/s.png --monitor "m fb fc" $T/v.prg | grep '^00FB' | cut -c7-11)
   [ "$R" = "BF 40" ] || fail "VIC-20 ($R)"
   echo "paddles: VIC-20 \$9008/\$9009 read 191 / 64"
+  # light pen in the middle of the picture: beam at line 170, cycle 35
+  $B --asm tests/vic20_pen.asm -o $T/p.prg >/dev/null
+  R=$($B --vic20 --pen 0.5 0.5 --headless 300 --png $T/s.png --monitor "m fb fc" $T/p.prg | grep '^00FB' | cut -c7-11)
+  [ "$R" = "49 55" ] || fail "VIC-20 light pen ($R)"
+  echo "paddles: VIC-20 light pen latched x \$49, y \$55"
 fi
 rm -rf $T

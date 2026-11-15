@@ -10,6 +10,13 @@ package body VIC_I is
    Line  : Natural := 0;
    Cycle : Natural := 0;
 
+   --  Light pen: latched position, target in beam coordinates
+   LP_X : Byte := 87;
+   LP_Y : Byte := 234;
+   Pen_On : Boolean := False;
+   Pen_Line, Pen_Cycle : Natural := 0;
+   Pen_Latched : Boolean := False;
+
    --  VIC-20 colours (after VICE's default palette)
    Palette : constant array (Byte range 0 .. 15) of Types.Pixel :=
      (16#000000#, 16#FFFFFF#, 16#B61F21#, 16#4DF0FF#,
@@ -148,8 +155,10 @@ package body VIC_I is
               (if Line mod 2 = 1 then 16#80# else 0);
          when 4 =>
             return Byte ((Line / 2) mod 256);
-         when 6 | 7 =>
-            return 0;              --  light pen
+         when 6 =>
+            return LP_X;           --  light pen
+         when 7 =>
+            return LP_Y;
          when 8 =>
             return Pot_X;          --  paddles
          when 9 =>
@@ -301,10 +310,28 @@ package body VIC_I is
       end;
    end Draw_Cycle;
 
+   procedure Set_Light_Pen (FX, FY : Float; On : Boolean) is
+      function Clamp (F : Float) return Float is
+        (Float'Max (0.0, Float'Min (0.999, F)));
+   begin
+      Pen_On := On;
+      Pen_Line := 28 + Natural (Clamp (FY) * Float (Video.VIC_Visible_Lines));
+      Pen_Cycle := Natural (Clamp (FX) * Float (Video.VIC_Visible_Width)) / 4;
+   end Set_Light_Pen;
+
    procedure Tick (Cycles : Natural) is
    begin
       Sound_Tick (Cycles);
       for N in 1 .. Cycles loop
+         if Pen_On and then not Pen_Latched and then Line = Pen_Line
+           and then Cycle = Pen_Cycle
+         then
+            --  the pen sees the beam
+            LP_X := Byte ((2 * ((Cycle + 1) mod Cycles_Per_Line)) mod 256)
+              or 1;
+            LP_Y := Byte ((Line / 2) mod 256);
+            Pen_Latched := True;
+         end if;
          Draw_Cycle (Line, Cycle);
          Cycle := Cycle + 1;
          if Cycle >= Cycles_Per_Line then
@@ -324,6 +351,7 @@ package body VIC_I is
                Row_Counter := 0;
                Y_Counter := 0;
                Memptr := 0;
+               Pen_Latched := False;
                Frame_Done := True;
             end if;
          end if;

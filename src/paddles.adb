@@ -8,6 +8,8 @@ package body Paddles is
 
    procedure Set_Mouse (FX, FY : Float) is
    begin
+      Pen_X := FX;
+      Pen_Y := FY;
       if Mode = Mouse then
          Value (1) := To_Value (FX);
          Value (2) := To_Value (FY);
@@ -16,6 +18,9 @@ package body Paddles is
 
    procedure Set_Mouse_Button (Button : Positive; Down : Boolean) is
    begin
+      if Mode = Light_Pen and then Button = 1 then
+         Pen_Down := Down;
+      end if;
       if Mode = Mouse and then Button <= 2 then
          Fire (Button) := Down;
       end if;

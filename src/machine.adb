@@ -645,6 +645,7 @@ package body Machine is
    --  The joystick lines; with paddles they carry the paddle buttons
    function V20_Joy return Byte is
      (if Paddles.Active then Paddles.Fire_Bits
+      elsif Paddles.Pen_Active then Paddles.Pen_Bits
       else Keyboard.Joy1 or Keyboard.Joy2);
 
    procedure V20_Inputs is
@@ -2822,6 +2823,10 @@ package body Machine is
       Feed_Keyboard;
       Keyboard.Tick_Typing;
       Paddles.Tick (Keyboard.Joy1 or Keyboard.Joy2);
+      if Current_Model = VIC20 then
+         V20.Set_Light_Pen (Paddles.Pen_X, Paddles.Pen_Y,
+                            Paddles.Pen_Active and then Paddles.Pen_Down);
+      end if;
       Autostart_Step;
       Frames := Frames + 1;
    end End_Of_Frame;

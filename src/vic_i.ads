@@ -27,6 +27,11 @@ package VIC_I is
 
    Pot_X, Pot_Y : Byte := 16#FF#;   --  paddle inputs ($9008 / $9009)
 
+   procedure Set_Light_Pen (FX, FY : Float; On : Boolean);
+   --  Light pen at FX / FY (0 .. 1) across the shown picture; while On the
+   --  VIC latches the beam position into $9006 / $9007 once per frame,
+   --  when the beam passes the pen (as in VICE)
+
    function Raster return Natural;
    function Screen_Address return Word;   --  VIC address of the matrix
    function Register (Reg : Natural) return Byte;

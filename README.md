@@ -114,9 +114,12 @@ images of the generic type, `.prg` files loading at `$A000`/`$B000` (or 16K /
 images, and split images such as `game-6000.prg` + `game-a000.prg` (opening
 either part loads both). They are placed like VICE places them (16K images
 go to their block plus `$A000`, 4K images are mirrored) and the machine is
-reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Not
-there yet on the VIC-20: bank-switching cartridges (Mega-Cart, Final
-Expansion), light pen, snapshots.
+reset, so the KERNAL starts the cartridge from its `A0CBM` signature. Input →
+*VIC-20 light pen on the mouse* turns the mouse into a light pen: while
+the left button is held (pen against the screen) the VIC latches the beam
+position into `$9006`/`$9007` when the beam passes the pen, and the pen's
+switch shows on the fire line. Not there yet on the VIC-20: bank-switching
+cartridges (Mega-Cart, Final Expansion), snapshots.
 
 **Paddles** (VIC-20 and C64; Input menu or `--paddles mouse|joystick`):
 on the mouse, the position over the picture turns the two paddles (left /

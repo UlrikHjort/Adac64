@@ -903,7 +903,9 @@ package body GUI is
                             Event : Gdk_Event_Button) return Boolean is
       pragma Unreferenced (Self);
    begin
-      if Paddles.Mode = Paddles.Mouse and then Event.Button in 1 | 3 then
+      if Paddles.Mode in Paddles.Mouse | Paddles.Light_Pen
+        and then Event.Button in 1 | 3
+      then
          Paddles.Set_Mouse_Button ((if Event.Button = 1 then 1 else 2),
                                    Event.The_Type = Button_Press);
          return True;
@@ -1450,6 +1452,9 @@ package body GUI is
                  Paddle_Group, Paddle_Items (Paddles.Mouse), On_Paddles'Access);
       Add_Radio (M_Input, "Paddles on the joystick (left/right, up/down)",
                  Paddle_Group, Paddle_Items (Paddles.Joystick),
+                 On_Paddles'Access);
+      Add_Radio (M_Input, "VIC-20 light pen on the mouse (hold the button)",
+                 Paddle_Group, Paddle_Items (Paddles.Light_Pen),
                  On_Paddles'Access);
       Add_Separator (M_Input);
       Add_Radio (M_Input, "No game controller", Host_Group, Host_Items (-1),
