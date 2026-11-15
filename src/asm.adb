@@ -246,6 +246,7 @@ package body Asm is
 
    Pass       : Natural := 0;
    PC         : Integer := 16#0801#;
+   Out_Offset : Integer := 0;   --  !pseudopc: output address - PC
    Changed    : Boolean := False;
    Low, High  : Integer := -1;
    Start      : Integer := -1;
@@ -781,17 +782,18 @@ package body Asm is
    ---------------------------------------------------------------------
 
    procedure Emit (B : Integer) is
+      Dest : constant Integer := PC + Out_Offset;
    begin
-      if PC < 0 or else PC > 65535 then
+      if PC < 0 or else PC > 65535 or else Dest < 0 or else Dest > 65535 then
          raise Asm_Error with "program counter outside $0000-$FFFF";
       end if;
-      Mem (PC) := Byte (B mod 256);
-      Used (PC) := True;
-      if Low < 0 or else PC < Low then
-         Low := PC;
+      Mem (Dest) := Byte (B mod 256);
+      Used (Dest) := True;
+      if Low < 0 or else Dest < Low then
+         Low := Dest;
       end if;
-      if PC > High then
-         High := PC;
+      if Dest > High then
+         High := Dest;
       end if;
       PC := PC + 1;
    end Emit;
@@ -1617,6 +1619,19 @@ package body Asm is
                end loop;
             end;
             return;
+         elsif Kw = "!pseudopc" then
+            --  assemble for another address, keep placing the bytes here
+            declare
+               Saved : constant Integer := Out_Offset;
+               Run : constant Integer := Must_Eval (Arg);
+            begin
+               Out_Offset := PC + Out_Offset - Run;
+               PC := Run;
+               Process (Set, L + 1, Close - 1);
+               PC := PC + Out_Offset - Saved;
+               Out_Offset := Saved;
+            end;
+            return;
          elsif Kw in "!zone" | "!zn" then
             declare
                Saved : constant Unbounded_String := Zone_Scope;
@@ -1701,6 +1716,7 @@ package body Asm is
       for P in 1 .. Max_Passes loop
          Pass := P;
          PC := 16#0801#;
+         Out_Offset := 0;
          Changed := False;
          Errors.Clear;
          Used := (others => False);

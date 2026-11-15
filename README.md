@@ -118,13 +118,18 @@ reset, so the KERNAL starts the cartridge from its `A0CBM` signature.
 **Mega-Cart** images (a raw 2 MB `.bin` or a VICE `.crt` of that type) get
 the cartridge's ROM banks, 32K RAM and 8K NVRAM, with the bank registers at
 `$9C80`/`$9D00`/`$9D80` and the software reset at `$9E00` as in VICE (the
-NVRAM lasts until the emulator quits). Input →
+NVRAM lasts until the emulator quits). **Final Expansion 3** images (a
+raw 512K flash image or a VICE `.crt`) get its 512K RAM and 512K flash
+(an AM29F040B that can be programmed and erased, like in VICE; changes are
+not written back to the file) with the registers at `$9C02`/`$9C03` and
+all the RAM / ROM modes. `tests/vic20_fe.asm` and the Mega-Cart test give
+the same results here as in VICE. Input →
 *VIC-20 light pen on the mouse* turns the mouse into a light pen: while
 the left button is held (pen against the screen) the VIC latches the beam
 position into `$9006`/`$9007` when the beam passes the pen, and the pen's
 switch shows on the fire line. Snapshots (Machine menu, Shift+F9 /
 Shift+F10) work on the VIC-20 too, including the RAM expansion and a
-cartridge. Not there yet on the VIC-20: the Final Expansion cartridge.
+cartridge, Mega-Cart or Final Expansion.
 
 **Paddles** (VIC-20 and C64; Input menu or `--paddles mouse|joystick`):
 on the mouse, the position over the picture turns the two paddles (left /
@@ -283,6 +288,7 @@ ACME's:
     !if DEBUG { ... } else { ... }    !for i, 0, 7 { !byte 1 << i }
     text    !scr "hello", 0  ; also !byte !word !text !pet !fill !align
                              ; !binary "f",size,skip  !source "f"  !to "f"
+    !pseudopc $1000 { ... }  ; assembled for $1000, placed here (copied later)
 
 Expressions: `$ff %1010 0x1f 'a' *` (PC), `+ - * / % & | ^ << >>`,
 `<x` / `>x` low / high byte, comparisons and `&& ||` for `!if`. Zero page

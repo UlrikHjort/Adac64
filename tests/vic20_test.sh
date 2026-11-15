@@ -62,6 +62,29 @@ $B --vic20 --headless 100 --png $T/s.png --save-snapshot $T/m.snap $T/mc.bin >/d
 R=$($B --vic20 --headless 1 --png $T/s.png --load-snapshot $T/m.snap --monitor "m 4000 4000" | grep '^4000' | cut -c7-8)
 [ "$R" = "5A" ] || fail "Mega-Cart snapshot (\$4000 = $R)"
 echo "vic20: Mega-Cart: banking restored from a snapshot"
+# Final Expansion 3: modes, banks, register lock, A13 inversion, RAM123 and
+# the flash (autoselect, program, sector erase); see tests/vic20_fe.asm
+$B --asm tests/vic20_fe.asm -o $T/fe.prg >/dev/null
+python3 -I -c "
+import sys
+d = open(sys.argv[1], 'rb').read()[2:]
+img = bytearray(b'\xff' * 0x80000); img[0x6000:0x6000 + len(d)] = d
+open(sys.argv[2], 'wb').write(img)" $T/fe.prg $T/fe.bin
+R=$($B --vic20 --headless 200 --png $T/s.png --monitor "m f0 fa" $T/fe.bin | grep '^00F0' | cut -c7-38)
+[ "$R" = "A0 11 22 01 A4 5A FF 00 33 44 44" ] || fail "Final Expansion (got $R)"
+echo "vic20: Final Expansion: modes, banks, lock, RAM123 and flash"
+if command -v cartconv >/dev/null; then
+  cartconv -t fe3 -i $T/fe.bin -o $T/fe.crt >/dev/null 2>&1
+  cartconv -t mega -i $T/mc.bin -o $T/mc.crt >/dev/null 2>&1
+  R=$($B --vic20 --headless 200 --png $T/s.png --monitor "m f0 f0" $T/fe.crt | grep '^00F0' | cut -c7-8)
+  R2=$($B --vic20 --headless 200 --png $T/s.png --monitor "m fc fc" $T/mc.crt | grep '^00FC' | cut -c7-8)
+  [ "$R $R2" = "A0 5A" ] || fail "VICE .crt of the Final Expansion / Mega-Cart ($R $R2)"
+  echo "vic20: Final Expansion and Mega-Cart as VICE .crt files"
+fi
+$B --vic20 --headless 100 --png $T/s.png --save-snapshot $T/f.snap $T/fe.bin >/dev/null
+R=$($B --vic20 --headless 1 --png $T/s.png --load-snapshot $T/f.snap --monitor "m 2000 2000" | grep '^2000' | cut -c7-8)
+[ "$R" = "22" ] || fail "Final Expansion snapshot (\$2000 = $R)"
+echo "vic20: Final Expansion: restored from a snapshot"
 # snapshots: 600 frames + snapshot + 300 frames = 900 frames straight
 # (the test cartridge counts in $fb all the time)
 R1=$($B --vic20 --headless 900 --png $T/s.png --monitor "m fb fb" $T/c8.prg | grep '^00FB' | cut -c7-8)

@@ -21,6 +21,7 @@ with REU;
 with Tape;
 with VIA;
 with VIC_I;
+with Final_Expansion;
 use type CRT.Cart_Type;
 with Drive1541;
 use type Media.Media_Kind;
@@ -491,6 +492,12 @@ package body Machine is
       end if;
       Set (16#C0#, 16#DF#, ROM_C64_Basic, Write_Sink);
       Set (16#E0#, 16#FF#, ROM_C64_Kernal, Write_Sink);
+      if Final_Expansion.Present then
+         --  every access goes to the cartridge (see Final_Expansion)
+         Set (16#04#, 16#0F#, IO_Page, IO_Page);
+         Set (16#20#, 16#7F#, IO_Page, IO_Page);
+         Set (16#A0#, 16#BF#, IO_Page, IO_Page);
+      end if;
       Kernal_High := True;
    end Map_VIC20;
 
@@ -684,8 +691,14 @@ package body Machine is
       if CPU_Addr >= 16#8000# then
          return (if CPU_Addr < 16#9000#
                  then Mem (ROM_C64_Char + CPU_Addr - 16#8000#) else 16#FF#);
-      elsif CPU_Addr in 16#0400# .. 16#0FFF# and then not Has_3K then
-         return 16#FF#;
+      elsif CPU_Addr in 16#0400# .. 16#0FFF# then
+         if Final_Expansion.Present then
+            return Final_Expansion.Peek (Word (CPU_Addr));
+         elsif MC_Present then
+            return Mem (Read_Map (Byte (CPU_Addr / 256)) + CPU_Addr mod 256);
+         elsif not Has_3K then
+            return 16#FF#;
+         end if;
       end if;
       return Mem (CPU_Addr);
    end V20_Fetch;
@@ -761,6 +774,9 @@ package body Machine is
    function V20_IO_Read (Addr : Word) return Byte is
       R : Byte := 16#FF#;
    begin
+      if Final_Expansion.Present and then Final_Expansion.Handles (Addr) then
+         return Final_Expansion.Read (Addr, Total_Cycles);
+      end if;
       case Addr is
          when 16#9000# .. 16#90FF# =>
             V20.Pot_X := (if Paddles.Active then Paddles.Value (1) else 16#FF#);
@@ -790,6 +806,10 @@ package body Machine is
 
    procedure V20_IO_Write (Addr : Word; Value : Byte) is
    begin
+      if Final_Expansion.Present and then Final_Expansion.Handles (Addr) then
+         Final_Expansion.Write (Addr, Value, Total_Cycles);
+         return;
+      end if;
       case Addr is
          when 16#9000# .. 16#90FF# =>
             V20.Write (Natural (Addr and 15), Value);
@@ -1430,6 +1450,25 @@ package body Machine is
          MC_Pending := True;
          Ok := True;
          return;
+      elsif BE16 (D'First + 16#16#) = 5 then
+         --  Final Expansion: 64 chips of 8K, the flash in order
+         declare
+            Flash : Byte_Array (0 .. Final_Expansion.Flash_Size - 1) :=
+              (others => 16#FF#);
+         begin
+            for Chip in 0 .. 63 loop
+               exit when P + 15 + 16#2000# > D'Last;
+               exit when Character'Val (D (P)) /= 'C';
+               Flash (Chip * 16#2000# .. Chip * 16#2000# + 16#1FFF#) :=
+                 D (P + 16 .. P + 15 + 16#2000#);
+               P := P + BE32 (P + 4);
+            end loop;
+            Final_Expansion.Load (Flash);
+         end;
+         Final_Expansion.Present := True;
+         MC_Pending := True;     --  (attached: nothing to place in blocks)
+         Ok := True;
+         return;
       end if;
       if BE16 (D'First + 16#16#) /= 0 then
          Err := To_Unbounded_String
@@ -1462,6 +1501,16 @@ package body Machine is
       end if;
       V20_Cart := (others => False);
       MC_Present := False;
+      Final_Expansion.Present := False;
+      if D'Length = 16#80000# then
+         --  a raw 512K image is a Final Expansion flash image
+         Final_Expansion.Load (D);
+         Final_Expansion.Present := True;
+         V20_Cart_Name :=
+           To_Unbounded_String (Ada.Directories.Simple_Name (Path));
+         Reset;
+         return;
+      end if;
       if D'Length = 16#200000# then
          --  a raw 2 MB image is a Mega-Cart
          Mem (MC_ROM .. MC_ROM + 16#1FFFFF#) := D;
@@ -1482,7 +1531,11 @@ package body Machine is
          if Ok and then MC_Pending then
             V20_Cart_Name :=
               To_Unbounded_String (Ada.Directories.Simple_Name (Path));
-            Attach_Mega_Cart;
+            if Final_Expansion.Present then
+               Reset;
+            else
+               Attach_Mega_Cart;
+            end if;
             return;
          end if;
       else
@@ -1552,6 +1605,7 @@ package body Machine is
    procedure Detach_Cartridge is
    begin
       MC_Present := False;
+      Final_Expansion.Present := False;
       V20_Cart := (others => False);
       V20_Cart_Name := Null_Unbounded_String;
       Cart_Present := False;
@@ -1855,6 +1909,13 @@ package body Machine is
       VIA.Reset (V20_VIA1);
       VIA.Reset (V20_VIA2);
       V20.Reset;
+      if Final_Expansion.Present then
+         if Hard then
+            Final_Expansion.Power_Up;
+         else
+            Final_Expansion.Reset;
+         end if;
+      end if;
       if MC_Present then
          --  power-up / reset button: OE off; a software reset ($9E00)
          --  toggles it, which switches the bank registers in or out
@@ -1900,14 +1961,32 @@ package body Machine is
          return (if Addr = 0 then Port_DDR else Port_Read);
       elsif Off >= 0 then
          return Mem (Off + Natural (Addr and 16#FF#));
+      elsif Current_Model = VIC20 and then Final_Expansion.Present
+        and then Final_Expansion.Handles (Addr)
+      then
+         return Final_Expansion.Peek (Addr);
       else
          return 16#FF#;
       end if;
    end Peek;
 
    procedure Poke (Addr : Word; Value : Byte) is
+      W : constant Integer := Write_Map (Hi (Addr));
    begin
-      Mem (Natural (Addr)) := Value;
+      if Current_Model = VIC20
+        and then (Final_Expansion.Present or else MC_Present)
+      then
+         --  through the cartridge's banking (loads into its RAM)
+         if Addr < 16#9000# and then Final_Expansion.Present
+           and then Final_Expansion.Handles (Addr)
+         then
+            Final_Expansion.Write (Addr, Value, Total_Cycles);
+         elsif W >= 0 then
+            Mem (W + Natural (Addr and 16#FF#)) := Value;
+         end if;
+      else
+         Mem (Natural (Addr)) := Value;
+      end if;
    end Poke;
 
    function RAM_Peek (Addr : Word) return Byte is (Mem (Natural (Addr)));
@@ -2000,8 +2079,12 @@ package body Machine is
       begin
          if not Verify then
             for I in 2 .. Data'Last loop
-               Mem (Bank * 16#10000# + (Load_Addr + I - 2) mod 16#10000#) :=
-                 Data (I);
+               if Current_Model = VIC20 then
+                  Poke (Word ((Load_Addr + I - 2) mod 16#10000#), Data (I));
+               else
+                  Mem (Bank * 16#10000# + (Load_Addr + I - 2) mod 16#10000#)
+                    := Data (I);
+               end if;
             end loop;
          end if;
          CPU.X := Byte (End_Addr mod 256);
@@ -2035,7 +2118,9 @@ package body Machine is
          Data (0) := Byte (Start_Addr mod 256);
          Data (1) := Byte (Start_Addr / 256);
          for I in 0 .. End_Addr - Start_Addr - 1 loop
-            Data (I + 2) := Mem (Bank * 16#10000# + Start_Addr + I);
+            Data (I + 2) :=
+              (if Current_Model = VIC20 then Peek (Word (Start_Addr + I))
+               else Mem (Bank * 16#10000# + Start_Addr + I));
          end loop;
          Media.Save_File (Read_Name, Data, Ok);
       end;
@@ -2483,6 +2568,7 @@ package body Machine is
          Byte'Write (S, MC_Bank_High);
          Boolean'Write (S, MC_OE);
          Boolean'Write (S, MC_NVRAM_En);
+         Final_Expansion.Save_State (S);
       end if;
       Close (F);
       Ok := True;
@@ -2583,6 +2669,7 @@ package body Machine is
          Boolean'Read (S, MC_OE);
          Boolean'Read (S, MC_NVRAM_En);
          MC_Soft_Reset := False;
+         Final_Expansion.Load_State (S);
          Drive1541.Set_Host_Clock (V20.Clock_Hz);
       end if;
       Close (F);
@@ -2842,6 +2929,11 @@ package body Machine is
 
    function IO_Peek (Addr : Word) return Byte is
    begin
+      if Current_Model = VIC20 and then Final_Expansion.Present
+        and then Final_Expansion.Handles (Addr)
+      then
+         return Final_Expansion.Peek (Addr);
+      end if;
       if Current_Model = VIC20 then
          case Addr is
             when 16#9000# .. 16#90FF# =>
