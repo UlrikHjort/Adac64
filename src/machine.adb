@@ -2035,6 +2035,18 @@ package body Machine is
             when 16#A000# =>
                V20_Mem := Unexpanded;
                V20_Block5 := True;        --  cartridge image in RAM
+            when 16#2000# .. 16#7FFF# =>
+               --  machine code loading into the expansion blocks
+               declare
+                  Need : constant Positive :=
+                    Natural (Media.First_Load_Address) / 16#2000#;
+               begin
+                  if Blocks < Need then
+                     V20_Mem := (case Need is
+                                   when 1 => Plus_8K, when 2 => Plus_16K,
+                                   when others => Plus_24K);
+                  end if;
+               end;
             when others => null;
          end case;
       end if;
